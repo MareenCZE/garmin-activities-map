@@ -23,8 +23,7 @@ Links
 
 TODO
 - download to latest (find last downloaded date from csv, download anything newer)
-- delete activity by id
-- reload activity by id
+- add time to activity date
 - add licence
 - add requirements.txt
 - update readme

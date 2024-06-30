@@ -7,6 +7,7 @@ import gpxpy
 from simplification.cutil import simplify_coords
 
 from common import logger, init_api
+from storage import Activity, ACTIVITIES_DATABASE, write_activity, update_activity
 
 COORDS_SIMPLIFICATION_FACTOR = 0.0001
 
@@ -25,7 +26,7 @@ def download_activities(api, from_date, to_date=None):
     os.makedirs('data/json', exist_ok=True)
     os.makedirs('data/gpx', exist_ok=True)
     os.makedirs('data/coordinates', exist_ok=True)
-    csv_filename = 'data/activities_list.csv'
+    csv_filename = ACTIVITIES_DATABASE
 
     activities = api.get_activities_by_date(from_date, to_date, None, "asc")
     logger.info(f"Going to process {len(activities)} activities")
@@ -45,45 +46,50 @@ def download_activities(api, from_date, to_date=None):
                 logger.info(f"Skipping {activity_id} - already in the CSV, i.e. processed in the past")
                 continue
 
-            date = datetime.datetime.fromisoformat(activity.get('startTimeLocal')).strftime("%Y-%m-%d")
-            activity_type = activity.get('activityType', {}).get('typeKey')
-            activity_filename = f"{date}_{activity_id}_{activity_type}"
-            json_filename = f"data/json/{activity_filename}.json"
-            gpx_filename = f"data/gpx/{activity_filename}.gpx"
-            coordinates_filename = f"data/coordinates/{activity_filename}.csv"
+            activity_object = download_files_and_parse_object(activity)
+            write_activity(writer, activity_object)
 
-            logger.info(f"Writing {json_filename}")
-            with open(json_filename, 'w') as json_file:
-                json.dump(activity, json_file)
 
-            gpx_data = api.download_activity(activity_id, dl_fmt=api.ActivityDownloadFormat.GPX)
-            has_gps_data = False
-            if len(gpx_data) > 0:
-                coordinates = simplify_coordinates(gpx_data)
-                if len(coordinates) > 0:
-                    logger.info(f"Writing {gpx_filename}")
-                    with open(gpx_filename, "wb") as gpx_file:
-                        gpx_file.write(gpx_data)
-                    logger.info(f"Writing {coordinates_filename}")
-                    with open(coordinates_filename, "w", newline='') as coords_file:
-                        coords_writer = csv.writer(coords_file)
-                        coords_writer.writerow(['latitude', 'longitude'])
-                        coords_writer.writerows(coordinates)
-                    has_gps_data = True
-                else:
-                    logger.warning(f"No coordinates for {activity_id}")
-            else:
-                logger.warning(f"No GPS data for {activity_id}")
+def download_files_and_parse_object(activity):
+    activity_id = activity.get('activityId')
+    date = datetime.datetime.fromisoformat(activity.get('startTimeLocal')).strftime("%Y-%m-%d")
+    activity_type = activity.get('activityType', {}).get('typeKey')
+    activity_filename = f"{date}_{activity_id}_{activity_type}"
+    json_filename = f"data/json/{activity_filename}.json"
+    gpx_filename = f"data/gpx/{activity_filename}.gpx"
+    coordinates_filename = f"data/coordinates/{activity_filename}.csv"
 
-            writer.writerow(
-                {'name': activity.get('activityName'),
-                 'activity_id': activity_id,
-                 'type': activity_type,
-                 'date': date,
-                 'duration': round(activity.get('duration') / 60, 1),
-                 'distance': round(activity.get('distance') / 1000, 2) if activity.get('distance') else 0,
-                 'filename': activity_filename,
-                 'has_gps_data': str('Y' if has_gps_data else 'N')})
+    logger.info(f"Writing {json_filename}")
+    with open(json_filename, 'w') as json_file:
+        json.dump(activity, json_file)
+
+    gpx_data = api.download_activity(activity_id, dl_fmt=api.ActivityDownloadFormat.GPX)
+    has_gps_data = False
+    if len(gpx_data) > 0:
+        coordinates = simplify_coordinates(gpx_data)
+        if len(coordinates) > 0:
+            logger.info(f"Writing {gpx_filename}")
+            with open(gpx_filename, "wb") as gpx_file:
+                gpx_file.write(gpx_data)
+            logger.info(f"Writing {coordinates_filename}")
+            with open(coordinates_filename, "w", newline='') as coords_file:
+                coords_writer = csv.writer(coords_file)
+                coords_writer.writerow(['latitude', 'longitude'])
+                coords_writer.writerows(coordinates)
+            has_gps_data = True
+        else:
+            logger.warning(f"No coordinates for {activity_id}")
+    else:
+        logger.warning(f"No GPS data for {activity_id}")
+
+    return Activity(activity_id=activity_id,
+                    distance=round(activity.get('distance') / 1000, 2) if activity.get('distance') else 0,
+                    duration=round(activity.get('duration') / 60, 1),
+                    date=date,
+                    filename=activity_filename,
+                    has_gps_data=has_gps_data,
+                    activity_type=activity_type,
+                    name=activity.get('activityName'))
 
 
 def get_processed_activity_ids(csv_filename):
@@ -105,6 +111,16 @@ def simplify_coordinates(gpx_data):
             for point in segment.points:
                 coordinates.append((point.latitude, point.longitude))
     return simplify_coords(coordinates, COORDS_SIMPLIFICATION_FACTOR)
+
+
+def reload_activity(api, activity_id):
+    logger.info(f"Re-downloading activity {activity_id}")
+    api_activity = api.get_activity(activity_id)
+    if not api_activity:
+        logger.warning(f"No activity {activity_id} found")
+        return
+    activity = download_files_and_parse_object(api_activity)
+    update_activity(activity)
 
 
 # Main program
