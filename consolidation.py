@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+This is not really useful or meant for general use. Keeping it here for inspiration if someone wants to do something
+similar I went through.
+
 Functions to do various bulk operations with Garmin activities. The idea was to get my GarminConnect account
 up to date with my sport activities records. I had my own offline records of my past sport activities and
 wanted to convey that information in GarminConnect consistently.
@@ -11,49 +14,15 @@ was needed because large number of activities had incorrect activity type simply
 were not available on my device back then.
 I also used these to upload manual activities in cases where I only had some basic stats about the activity without
 any GPS data.
-
-Links:
- - this code is based on https://github.com/cyberjunky/python-garminconnect
- - another related projects which creates a local DB from activities https://github.com/tcgoetz/GarminDB
- - both are based on more low-level https://github.com/matin/garth
- - library for parsing of FIT files https://fitdecode.readthedocs.io/en/latest/index.html
- - web FIT viewer https://www.fitfileviewer.com
- - web GPX viewer https://gpx.studio
-
- - articles about how to visualize activities
-    - how to create heat map https://medium.com/@azholud/analysis-and-visualization-of-activities-from-garmin-connect-b3e021c62472
-    - https://medium.com/@vinodvidhole/interesting-heatmaps-using-python-folium-ee41b118a996
- - Python library to generate heat map https://python-visualization.github.io/folium/latest/index.html
-    - uses JS library for maps https://leafletjs.com
- - https://github.com/pe-st/garmin-connect-export
- - https://github.com/danmarg/export_garmin
- - https://github.com/tcgoetz/GarminDB
- - https://github.com/polyvertex/fitdecode
 """
 
 import csv
 import datetime
 import json
-import logging
-import os
 import time
 import xml.etree.ElementTree as ET
-from getpass import getpass
 
-import requests
-from garminconnect import (
-    Garmin,
-    GarminConnectAuthenticationError,
-)
-from garth.exc import GarthHTTPError
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger(__name__)
-token_store = os.getenv("GARMINTOKENS") or "~/.garminconnect"
+from common import logger, init_api
 
 #
 # GARMIN ACTIVITY TYPES
@@ -72,8 +41,7 @@ ACTIVITY_TYPES = {'running': [1, "running", 17],
                   'crossCountryClassic': [171, "cross_country_skiing_ws", 165],
                   'backcountry': [203, "backcountry_skiing", 165],
                   'hiking': [3, "hiking", 17],
-                  'cycling': [2, "cycling", 17]
-                  }
+                  'cycling': [2, "cycling", 17]}
 
 
 # ###################
@@ -97,64 +65,15 @@ def display_json(api_call, output):
 
 
 def activity_tostring(activity):
+    """Get a shorter toString representation of an activity"""
     return f"{activity.get('activityId')}, {activity.get('activityName')}, {activity.get('startTimeGMT')}, typeId={activity.get('activityType').get('typeId')}, typeKey={activity.get('activityType').get('typeKey')}, parentTypeId={activity.get('activityType').get('parentTypeId')}, distance={round(activity.get('distance') / 1000, 1)}, duration={round(activity.get('duration') / 60, 0)}, avgSpeed={round(activity.get('averageSpeed') * 3.6, 1)},"
-
-
-def get_credentials():
-    """Get user credentials."""
-
-    email = input("Login e-mail: ")
-    password = getpass("Enter password: ")
-
-    return email, password
-
-
-def init_api():
-    """Initialize Garmin API with your credentials."""
-
-    try:
-        # Using Oauth1 and OAuth2 token files from directory
-        print(f"Trying to login to Garmin Connect using token data from directory '{token_store}'...\n")
-
-        garmin = Garmin()
-        garmin.login(token_store)
-
-    except (FileNotFoundError, GarthHTTPError, GarminConnectAuthenticationError):
-        # Session is expired. You'll need to log in again
-        print(
-            "Login tokens not present, login with your Garmin Connect credentials to generate them.\n"
-            f"They will be stored in '{token_store}' for future use.\n"
-        )
-        try:
-            email, password = get_credentials()
-
-            garmin = Garmin(email=email, password=password, is_cn=False, prompt_mfa=get_mfa)
-            garmin.login()
-            # Save Oauth1 and Oauth2 token files to directory for next login
-            garmin.garth.dump(token_store)
-            print(
-                f"Oauth tokens stored in '{token_store}' directory for future use. (first method)\n"
-            )
-        except (
-                FileNotFoundError, GarthHTTPError, GarminConnectAuthenticationError,
-                requests.exceptions.HTTPError) as err:
-            logger.error(err)
-            return None
-
-    return garmin
-
-
-def get_mfa():
-    """Get MFA."""
-
-    return input("MFA one-time code: ")
 
 
 # ###################
 # MAIN LOGIC
 # ###################
 def get_activity_by_id(api, activity_id):
-    # Get activity by ID and print it out as JSON
+    """ Get activity by ID and print it out as JSON. Useful to see names of all the fields available on an activity."""
 
     display_json(
         f"api.get_activity({activity_id})",
@@ -173,29 +92,28 @@ def categorize_activities(api):
 
     STEPS
      - Get activities from GarminConnect
-     - Classify the activity based on some basic logic (see DECISION LOGIC below)
-     - Write basic parameters of the activities along with their calculated types into a CSV
+     - Classify the activity based on some basic logic (see DECISION LOGIC below and ACTIVITY_TYPES above)
+     - Write basic parameters of the activities along with their calculated types into a CSV to allow further processing
     """
 
     # INPUT PARAMETERS
     start_date = datetime.date(2014, 1, 1)
-    end_date = datetime.date(2014, 12, 31)
-    activity_type = "running"  # type of activities in GarminConnect to process
+    end_date = datetime.date(2014, 6, 30)
+    activity_type = None  # type of activities in GarminConnect to process
     # ################
 
-    start = 0
-    limit = 1000
-    activities = api.get_activities(start_date, end_date, start, limit, activity_type)  # 0=start, 1=limit
+    activities = api.get_activities_by_date(start_date, end_date, activity_type, "asc")
 
     if not activities:
         print("No activities found")
         return
 
-    print("Processing " + str(len(activities)) + " activities")
+    logger.info("Processing " + str(len(activities)) + " activities")
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    print("Result timestamp " + timestamp)
+    output_file = f"data/activities_{timestamp}.csv"
+    logger.info("Writing output into " + output_file)
 
-    with open("activities" + timestamp + ".csv", "w", newline="") as csv_file:
+    with open(output_file, "w", newline="") as csv_file:
         writer = csv.writer(csv_file, dialect="excel", delimiter=';', quoting=csv.QUOTE_NONE)
         writer.writerow(
             ["ActivityId", "StartTimeLocal", "ActivityName", "Distance", "AverageSpeed", "MaxSpeed", "ElevationGain",
@@ -227,14 +145,12 @@ def categorize_activities(api):
                 new_type = "???"
 
             # ###################
-            writer.writerow([
-                activity.get("activityId"), start_time_local, activity_name,
-                str(distance).replace('.', ','), str(average_speed).replace('.', ','),
-                str(max_speed).replace('.', ','), str(elevation_gain).replace('.', ','),
-                str(elevation_loss).replace('.', ','), activity.get("activityType").get("typeId"),
-                activity.get("activityType").get("typeKey"), activity.get("activityType").get("parentTypeId"),
-                new_type
-            ])
+            writer.writerow(
+                [activity.get("activityId"), start_time_local, activity_name, str(distance).replace('.', ','),
+                 str(average_speed).replace('.', ','), str(max_speed).replace('.', ','),
+                 str(elevation_gain).replace('.', ','), str(elevation_loss).replace('.', ','),
+                 activity.get("activityType").get("typeId"), activity.get("activityType").get("typeKey"),
+                 activity.get("activityType").get("parentTypeId"), new_type])
 
     return None
 
@@ -255,7 +171,7 @@ def update_activity_type(api):
      """
 
     # INPUT PARAMETERS
-    csv_file = "../python-garminconnect/activities20240521_225519.csv"
+    csv_file = "data/activities_20240521_225519.csv"
     # ###################
     activities = []
 
@@ -303,12 +219,10 @@ def upload_manual_activities(api):
 
     # INPUT PARAMETERS
     force_creation = False  # use with CAUTION, creates activity in GarminConnect even if there is one already on that day
-    activities = [
-        # [YYYY-MM-DD, type_key, distance_in_km, duration_in_min, avg_speed_in_kmh, activity_name]
+    activities = [  # [YYYY-MM-DD, type_key, distance_in_km, duration_in_min, avg_speed_in_kmh, activity_name]
         ["2009-09-14", "inline_skating", 8, None, 15, "Inline Skating první jízda, z obchodu v Prateru"],
         ["2009-09-15", "inline_skating", 5, None, 15, "Inline Skating škola"],
-        ["2009-11-27", "inline_skating", 12, None, 15, "Inline Skating cesta na tělák od U1 a technika"]
-    ]
+        ["2009-11-27", "inline_skating", 12, None, 15, "Inline Skating cesta na tělák od U1 a technika"]]
 
     # #################
     # check for existing activities
@@ -353,7 +267,8 @@ def upload_manual_activities(api):
         if start_date is None or type_key is None or distance_km is None or duration_min is None or activity_name is None:
             raise ValueError("Invalid activity " + str(activity))
 
-        return_value = api.create_manual_activity(start_date, type_key, distance_km, duration_min, activity_name)
+        return_value = api.create_manual_activity(start_date + "T10:00:00.00", 'Europe/Paris', type_key, distance_km,
+                                                  duration_min, activity_name)
         print(str(return_value) + " for " + str(activity))
 
     return None
@@ -376,7 +291,7 @@ def split_and_upload(api):
     """
 
     # INPUT PARAMETERS
-    input_file = "export"
+    input_file = "data/export"
     activity_type = "inline"
     delete = False  # use with CAUTION! Deletes from GarminConnect
     upload = False
@@ -396,10 +311,8 @@ def split_and_upload(api):
         with open(output_filename, "w") as output_file:
             output_file.write(output_xml)
 
-        existing_activities = api.get_activities_by_date(
-            datetime.datetime.fromisoformat(timestamp),
-            datetime.datetime.fromisoformat(timestamp)
-        )
+        existing_activities = api.get_activities_by_date(datetime.datetime.fromisoformat(timestamp),
+                                                         datetime.datetime.fromisoformat(timestamp))
         for activity in existing_activities:
             print(" - Existing: " + activity_tostring(activity))
             if delete:
@@ -416,10 +329,8 @@ def split_and_upload(api):
             print(" - " + str(response))
             time.sleep(3)
 
-        existing_activities = api.get_activities_by_date(
-            datetime.datetime.fromisoformat(timestamp),
-            datetime.datetime.fromisoformat(timestamp)
-        )
+        existing_activities = api.get_activities_by_date(datetime.datetime.fromisoformat(timestamp),
+                                                         datetime.datetime.fromisoformat(timestamp))
         activity_id = None
         for activity in existing_activities:
             if activity.get("startTimeGMT").replace(" ", "T") + "Z" == timestamp:
@@ -436,77 +347,6 @@ def split_and_upload(api):
     return None
 
 
-def get_activities_to_csv(api, from_date, to_date=None):
-    """
-    Get activities from GarminConnect within a specified date range and save them to files.
-    Appends to a CSV file which is stored as a database of all activities with some basic information about them.
-    Exports activity GPS data info into a GPX file.
-    Export other activity fields into a JSON file.
-    """
-
-    os.makedirs('../python-garminconnect/activities-json', exist_ok=True)
-    os.makedirs('../python-garminconnect/activities-gpx', exist_ok=True)
-    csv_filename = '../python-garminconnect/my_activities_list.csv'
-
-    activities = api.get_activities_by_date(from_date, to_date)
-    logger.info(f"Going to process {len(activities)} activities")
-    processed_activity_ids = get_processed_activity_ids(csv_filename)
-
-    fieldnames = ['date', 'type', 'duration', 'distance', 'activity_id', 'name', 'link', 'gpx-file', 'json-file']
-
-    logger.info(f"Output going into {csv_filename}")
-    with open(csv_filename, mode='a', newline='') as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-        if len(processed_activity_ids) == 0:
-            writer.writeheader()
-
-        for activity in activities:
-            activity_id = activity.get('activityId')
-            if str(activity_id) in processed_activity_ids:
-                logger.info(f"Skipping {activity_id} - already in the CSV, i.e. processed in the past")
-                continue
-
-            date = datetime.datetime.fromisoformat(activity.get('startTimeLocal')).strftime("%Y-%m-%d")
-            activity_type = activity.get('activityType', {}).get('typeKey')
-            json_filename = f"activities-json/{date}_{activity_id}_{activity_type}.json"
-            gpx_filename = f"activities-gpx/{date}_{activity_id}_{activity_type}.gpx"
-
-            logger.info(f"Writing {json_filename}")
-            with open(json_filename, 'w') as json_file:
-                json.dump(activity, json_file)
-
-            gpx_data = api.download_activity(activity_id, dl_fmt=api.ActivityDownloadFormat.GPX)
-            if len(gpx_data) > 0:
-                logger.info(f"Writing {gpx_filename}")
-                with open(gpx_filename, "wb") as gpx_file:
-                    gpx_file.write(gpx_data)
-            else:
-                logger.warning(f"No GPS data for {activity_id}")
-
-            writer.writerow({
-                'name': activity.get('activityName'),
-                'activity_id': activity_id,
-                'type': activity_type,
-                'date': date,
-                'duration': round(activity.get('duration') / 60, 1),
-                'distance': round(activity.get('distance') / 1000, 2) if activity.get('distance') else 0,
-                'link': f"https://connect.garmin.com/modern/activity/{activity_id}",
-                'json-file': json_filename,
-                'gpx-file': gpx_filename if len(gpx_data) > 0 else None
-            })
-
-
-def get_processed_activity_ids(csv_filename):
-    activity_ids = set()
-    if os.path.exists(csv_filename):
-        with open(csv_filename, mode='r', newline='') as csv_file:
-            reader = csv.DictReader(csv_file)
-            for row in reader:
-                activity_ids.add(row['activity_id'])
-
-    return activity_ids
-
-
 # Main program
 api = init_api()
 
@@ -516,9 +356,4 @@ api = init_api()
 # upload_manual_activities(api)
 # update_activity_type(api)
 # categorize_activities(api)
-# get_activity_by_id(api, 15611628640)
-get_activities_to_csv(api, "2011-07-06", "2011-07-06")
-
-# TODO
-# - delete activity by id
-# - reload activity by id
+get_activity_by_id(api, 15611628640)
