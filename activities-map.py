@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import logging
+from typing import List
+
 import folium
 
 from storage import load_activities_from_csv, Activity, ACTIVITIES_DATABASE
@@ -7,30 +9,25 @@ from storage import load_activities_from_csv, Activity, ACTIVITIES_DATABASE
 OUTPUT_MAP_FILENAME = 'data/activities_map.html'
 
 ACTIVITY_URL = "https://connect.garmin.com/modern/activity/"
-GROUP_TO_COLOR = {'Running': 'deepskyblue',
-                  'Inline': 'limegreen',
-                  'Skiing': 'deeppink',
-                  'Crosscountry': 'magenta',
-                  'Hiking': 'yellow',
-                  'Cycling': 'darkorange'
-                  }
 
-TYPE_TO_GROUP = {'running': 'Running',
-                 'track_running': 'Running',
-                 'trail_running': 'Running',
-                 'inline_skating': 'Inline',
-                 'resort_skiing': 'Skiing',
-                 'resort_snowboarding': 'Skiing',
-                 'resort_skiing_snowboarding_ws': 'Skiing',
-                 'skate_skiing_ws': 'Crosscountry',
-                 'cross_country_skiing_ws': 'Crosscountry',
-                 'backcountry_skiing': 'Crosscountry',
-                 'hiking': 'Hiking',
-                 'walking': 'Hiking',
-                 'cycling': 'Cycling',
-                 'mountain_biking': 'Cycling',
-                 'gravel_cycling': 'Cycling'
-                 }
+
+class TypeMapping:
+    def __init__(self, name: str, color: str, type_keys: List[str]):
+        self.name = name
+        self.color = color
+        self.type_keys = type_keys
+
+    def contains_key(self, type_key):
+        return type_key in self.type_keys
+
+
+TYPE_MAPPINGS = [TypeMapping("Unknown", 'red', []),
+                 TypeMapping("Running", 'deepskyblue', ['running', 'track_running', 'trail_running']),
+                 TypeMapping('Inline', 'limegreen', ['inline_skating']),
+                 TypeMapping('Skiing', 'deeppink', ['resort_skiing', 'resort_snowboarding', 'resort_skiing_snowboarding_ws']),
+                 TypeMapping('Crosscountry', 'magenta', ['skate_skiing_ws', 'cross_country_skiing_ws', 'backcountry_skiing']),
+                 TypeMapping('Hiking', 'yellow', ['hiking', 'walking']),
+                 TypeMapping('Cycling', 'darkorange', ['cycling', 'mountain_biking', 'gravel_cycling'])]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,39 +38,47 @@ logger = logging.getLogger(__name__)
 uncategorized_activity_types = set()
 
 
+def get_type_mapping(type_key: str) -> TypeMapping:
+    for mapping in TYPE_MAPPINGS:
+        if mapping.contains_key(type_key):
+            return mapping
+
+    if type_key not in uncategorized_activity_types:
+        logger.info("Uncategorized activity type: " + type_key)
+        uncategorized_activity_types.add(type_key)
+    return TYPE_MAPPINGS[0]
+
+
 def add_activities_to_map(activities, map):
     activities_count = 0
-    groups = {}
+    feature_groups = {}
 
     for activity in activities:
         if not activity.has_gps_data:
             logger.debug(f"Skipping due to missing coordinates - {activity}")
             continue
-        group_name = TYPE_TO_GROUP.get(activity.activity_type, 'Unknown')
-        color = GROUP_TO_COLOR.get(group_name, 'red')
-        polyline = folium.PolyLine(activity.coordinates, color=color, weight=3, opacity=0.8, smooth_factor=3)
-        popup = folium.Popup(activity.get_popup_html(), max_width=300)
+        type_mapping = get_type_mapping(activity.activity_type)
+        polyline = folium.PolyLine(activity.coordinates, color=type_mapping.color, weight=3, opacity=0.8,
+                                   smooth_factor=3)
+        popup = folium.Popup(create_popup_html(activity), max_width=300)
         polyline.add_child(popup)
 
-        group = groups.setdefault(group_name, folium.FeatureGroup(group_name))
-        polyline.add_to(group)
+        feature_group = feature_groups.setdefault(type_mapping.name, folium.FeatureGroup(type_mapping.name))
+        polyline.add_to(feature_group)
         activities_count += 1
 
-    for group in groups.values():
-        group.add_to(map)
+    for feature_group in feature_groups.values():
+        feature_group.add_to(map)
 
     logger.info(
-        f"Added {activities_count} activities with GPS data divided into {len(groups.keys())} groups to the map")
+        f"Added {activities_count} activities with GPS data divided into {len(feature_groups.keys())} groups to the map")
 
-def create_popup_html(activity:Activity):
+
+def create_popup_html(activity: Activity):
     hours, minutes = divmod(activity.duration, 60)
     formatted_duration = f"{int(hours):0}h {int(minutes):0}m"
-    type = TYPE_TO_GROUP.get(activity.activity_type, 'Unknown')
-    if type == 'Unknown':
-        if activity.activity_type not in uncategorized_activity_types:
-            logger.info("Uncategorized activity type: " + activity.activity_type)
-            uncategorized_activity_types.add(activity.activity_type)
-    return f"{activity.date}<br>{type}<br>{activity.name}<br>{activity.distance} km, {formatted_duration}<br><a href='{ACTIVITY_URL}{activity.activity_id}' target='_blank'>Activity {activity.activity_id}</a>"
+    type_mapping = get_type_mapping(activity.activity_type)
+    return f"{activity.date}<br>{type_mapping.name}<br>{activity.name}<br>{activity.distance} km, {formatted_duration}<br><a href='{ACTIVITY_URL}{activity.activity_id}' target='_blank'>Activity {activity.activity_id}</a>"
 
 
 logger.info(f"Reading activities from {ACTIVITIES_DATABASE}")
@@ -94,3 +99,4 @@ folium.LayerControl(collapsed=False).add_to(activities_map)
 # Save the map to an HTML file
 activities_map.save(OUTPUT_MAP_FILENAME)
 logger.info(f"Generated {OUTPUT_MAP_FILENAME}")
+# using jsmin it is possible to reduce size of the file by ˜1 MB

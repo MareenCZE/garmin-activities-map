@@ -28,4 +28,3 @@ TODO
 - add requirements.txt
 - update readme
 - filtering by year, lazy loading
-- consolidate type_to_group and group_to_color

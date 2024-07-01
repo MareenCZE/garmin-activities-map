@@ -6,9 +6,18 @@ import logging
 from typing import List
 
 ACTIVITIES_DATABASE = 'data/activities_list.csv'
+DIRECTORY_JSON = 'data/json'
+DIRECTORY_GPX = 'data/gpx'
+DIRECTORY_COORDS = 'data/coordinates'
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
+
+
+def init_directories():
+    os.makedirs(DIRECTORY_JSON, exist_ok=True)
+    os.makedirs(DIRECTORY_GPX, exist_ok=True)
+    os.makedirs(DIRECTORY_COORDS, exist_ok=True)
 
 
 class Activity:
@@ -18,10 +27,10 @@ class Activity:
         self.duration = float(duration)
         self.date = date
         self.filename = filename
-        self.coords_filename = f"data/coordinates/{filename}.csv"
-        self.json_filename = f"data/json/{filename}.json"
-        self.gpx_filename = f"data/gpx/{filename}.gpx"
-        self.has_gps_data = True if has_gps_data == 'Y' else False
+        self.coords_filename = f"{DIRECTORY_COORDS}/{filename}.csv"
+        self.json_filename = f"{DIRECTORY_JSON}/{filename}.json"
+        self.gpx_filename = f"{DIRECTORY_GPX}/{filename}.gpx"
+        self.has_gps_data = has_gps_data
         self.activity_type = activity_type
         self.name = name
         self.coordinates = []
@@ -30,6 +39,9 @@ class Activity:
         if self.has_gps_data:
             self.coordinates = read_coordinates(self.coords_filename)
 
+    def __str__(self):
+        return f"Activity({self.activity_id}, {self.date}, {self.name})"
+
 
 def load_activities_from_csv(csv_filename, load_coordinates=True):
     activities = []
@@ -37,11 +49,11 @@ def load_activities_from_csv(csv_filename, load_coordinates=True):
         reader = csv.DictReader(csv_file)
         for row in reader:
             activity = Activity(
-                activity_id=row['activity_id'],
-                distance=row['distance'],
-                duration=row['duration'],
+                activity_id=int(row['activity_id']),
+                distance=float(row['distance']),
+                duration=float(row['duration']),
                 date=row['date'],
-                has_gps_data=row['has_gps_data'],
+                has_gps_data=True if row['has_gps_data'] == 'True' else False,
                 filename=row['filename'],
                 activity_type=row['type'],
                 name=row['name']
@@ -82,12 +94,13 @@ def write_activity(writer, activity:Activity):
          'duration': activity.duration,
          'distance': activity.distance,
          'filename': activity.filename,
-         'has_gps_data': str('Y' if activity.has_gps_data else 'N')})
+         'has_gps_data': str(activity.has_gps_data)})
 
 
-def create_writer(filename):
+def create_writer(file_handler):
     fieldnames = ['date', 'type', 'duration', 'distance', 'activity_id', 'name', 'filename', 'has_gps_data']
-    return csv.DictWriter(filename, fieldnames=fieldnames)
+    return csv.DictWriter(file_handler, fieldnames=fieldnames)
+
 
 def load_and_backup():
     # create a backup
