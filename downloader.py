@@ -2,6 +2,7 @@ import csv
 import datetime
 import json
 import os
+from typing import List
 
 import gpxpy
 from simplification.cutil import simplify_coords
@@ -23,7 +24,7 @@ original.. 132.5 MB """
 COORDS_SIMPLIFICATION_FACTOR = 0.0001
 
 
-def download_activities(api, from_date, to_date=None):
+def download_activities(api, from_date=None, to_date=None):
     """
     Get activities from GarminConnect within a specified date range and save them to files.
     Appends to a CSV file which is stored as a database of all activities with some basic information about them.
@@ -32,14 +33,30 @@ def download_activities(api, from_date, to_date=None):
     These two files are not needed for the map but can be used for additional processing without having to re-download
     from Garmin.
     Creates coordinates file from the GPS data by applying a simplification factor to reduce size significantly.
+
+    from_date - optional. Date of last activity in DB is used by default
+    to_date - optional. Now used by default
     """
 
     init_directories()
     csv_filename = ACTIVITIES_DATABASE
+    existing_activities = load_activities_from_csv(csv_filename, False)
+
+    if not from_date:
+        if len(existing_activities) == 0:
+            from_date = "1970-01-01"
+        else:
+            from_date = existing_activities[len(existing_activities) - 1].date
+        logger.info(f"From date not specified. Using {from_date}")
 
     api_activities = api.get_activities_by_date(from_date, to_date, None, "asc")
+
+    if len(api_activities) > 500:
+        logger.warn(f"Too many activities to process ({len(api_activities)}). Going to process only the first 500. Consider using from_date and to_date.")
+        api_activities = api_activities[0:500]
+
     logger.info(f"Going to process {len(api_activities)} activities")
-    processed_activity_ids = get_processed_activity_ids(csv_filename)
+    processed_activity_ids = get_processed_activity_ids(existing_activities)
 
     logger.info(f"Output going into {csv_filename}")
     with open(csv_filename, mode='a', newline='') as csv_file:
@@ -49,7 +66,7 @@ def download_activities(api, from_date, to_date=None):
 
         for api_activity in api_activities:
             activity_id = api_activity.get('activityId')
-            if str(activity_id) in processed_activity_ids:
+            if activity_id in processed_activity_ids:
                 logger.info(f"Skipping {activity_id} - already in the CSV, i.e. processed in the past")
                 continue
 
@@ -105,15 +122,8 @@ def write_coordinates(activity: Activity):
         coords_writer.writerows(activity.coordinates)
 
 
-def get_processed_activity_ids(csv_filename):
-    activity_ids = set()
-    if os.path.exists(csv_filename):
-        with open(csv_filename, mode='r', newline='') as csv_file:
-            reader = csv.DictReader(csv_file)
-            for row in reader:
-                activity_ids.add(row['activity_id'])
-
-    return activity_ids
+def get_processed_activity_ids(activities: List[Activity]):
+    return [activity.activity_id for activity in activities]
 
 
 def simplify_coordinates(gpx_data):
@@ -156,4 +166,4 @@ def reload_activity(api, activity_id):
 # regenerate_coordinates()
 
 api = init_api()
-download_activities(api, "2024-06-23")
+download_activities(api)

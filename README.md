@@ -22,7 +22,6 @@ Links
  - https://github.com/polyvertex/fitdecode
 
 TODO
-- download to latest (find last downloaded date from csv, download anything newer)
 - add time to activity date
 - add licence
 - add requirements.txt
