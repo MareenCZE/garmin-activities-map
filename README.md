@@ -23,6 +23,5 @@ Links
 
 TODO
 - add time to activity date
-- add requirements.txt
 - update readme
 - filtering by year, lazy loading
