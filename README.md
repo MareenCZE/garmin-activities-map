@@ -23,7 +23,6 @@ Links
 
 TODO
 - add time to activity date
-- add licence
 - add requirements.txt
 - update readme
 - filtering by year, lazy loading

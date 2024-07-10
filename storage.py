@@ -1,8 +1,8 @@
 import csv
 import datetime
+import logging
 import os
 import shutil
-import logging
 from typing import List
 
 ACTIVITIES_DATABASE = 'data/activities_list.csv'
@@ -76,7 +76,7 @@ def read_coordinates(filename):
     return coordinates
 
 
-def write_database(activities:List[Activity], filename):
+def write_database(activities: List[Activity], filename):
     logger.info(f"Writing into {filename}")
     with open(filename, mode='w', newline='') as csv_file:
         writer = create_writer(csv_file)
@@ -85,7 +85,7 @@ def write_database(activities:List[Activity], filename):
             write_activity(writer, activity)
 
 
-def write_activity(writer, activity:Activity):
+def write_activity(writer, activity: Activity):
     writer.writerow(
         {'name': activity.name,
          'activity_id': activity.activity_id,
@@ -135,7 +135,7 @@ def delete_activity(activity_id):
     write_database(activities, ACTIVITIES_DATABASE)
 
 
-def delete_activity_files(activity:Activity):
+def delete_activity_files(activity: Activity):
     if os.path.exists(activity.coords_filename):
         logger.info(f"Deleting {activity.coords_filename}")
         os.remove(activity.coords_filename)
@@ -147,7 +147,7 @@ def delete_activity_files(activity:Activity):
         os.remove(activity.json_filename)
 
 
-def update_activity(new_activity:Activity):
+def update_activity(new_activity: Activity):
     activities = load_and_backup()
     old_activity = next((activity for activity in activities if activity.activity_id == new_activity.activity_id), None)
 
@@ -166,4 +166,4 @@ def update_activity(new_activity:Activity):
     activities[index] = new_activity
     write_database(activities, ACTIVITIES_DATABASE)
 
-#resort_database()
+# resort_database()

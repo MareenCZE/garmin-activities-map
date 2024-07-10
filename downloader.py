@@ -1,7 +1,6 @@
 import csv
 import datetime
 import json
-import os
 from typing import List
 
 import gpxpy
@@ -15,12 +14,13 @@ from storage import Activity, ACTIVITIES_DATABASE, write_activity, update_activi
 It is not necessary to use all the full GPS coordinates. They are large and the level of detail is not needed for purposes of the map.
 Therefore, using simplification utility to minimize size of the coordinates collection while still keeping almost the same shape of the
 route. Size of the coordinates directly affects size of the resulting html file.
-The simplification algorithm requires an epsilon parameter. See what impact it had on a sample of my data.
-0.001   .. 1.8 MB (very noticeable loss of precision)
-0.0005  .. 3.8 MB (noticeable loss of precision)
-0.0001  .. 11.6 MB (reasonably good)
-0.00001 .. 41.8 MB
-original.. 132.5 MB """
+The simplification algorithm requires an epsilon parameter. See what impact it had on a sample of my data (˜2000 activities):
+0.001    ..   1.8 MB (very noticeable loss of precision)
+0.0005   ..   3.8 MB (noticeable loss of precision)
+0.0001   ..  11.6 MB (reasonably good)
+0.00001  ..  41.8 MB
+original .. 132.5 MB (coordinates without simplification)
+GPX files..   1.2 GB (all the GPX data, including heartrate etc.)"""
 COORDS_SIMPLIFICATION_FACTOR = 0.0001
 
 
@@ -52,7 +52,8 @@ def download_activities(api, from_date=None, to_date=None):
     api_activities = api.get_activities_by_date(from_date, to_date, None, "asc")
 
     if len(api_activities) > 500:
-        logger.warn(f"Too many activities to process ({len(api_activities)}). Going to process only the first 500. Consider using from_date and to_date.")
+        logger.warn(
+            f"Too many activities to process ({len(api_activities)}). Going to process only the first 500. Consider using from_date and to_date.")
         api_activities = api_activities[0:500]
 
     logger.info(f"Going to process {len(api_activities)} activities")
@@ -167,3 +168,5 @@ def reload_activity(api, activity_id):
 
 api = init_api()
 download_activities(api)
+
+# reload_activity(api, 1700000403)
