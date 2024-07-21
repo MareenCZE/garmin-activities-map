@@ -9,7 +9,7 @@ from garth.exc import GarthHTTPError
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
-token_store = os.getenv("GARMINTOKENS") or "~/.garminconnect"
+token_store = ".auth/"
 
 
 def init_api():

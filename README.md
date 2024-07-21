@@ -24,4 +24,5 @@ Links
 TODO
 - add time to activity date
 - update readme
+- put it online
 - filtering by year, lazy loading

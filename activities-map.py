@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 import logging
+import os.path
 from typing import List
 
 import folium
-
+import folium.plugins
 from storage import load_activities_from_csv, Activity, ACTIVITIES_DATABASE
 
 OUTPUT_MAP_FILENAME = 'data/activities_map.html'
-
+MAPY_CZ_API_KEY_FILENAME = '.auth/mapy_cz_api_key.txt'
 ACTIVITY_URL = "https://connect.garmin.com/modern/activity/"
-
 
 class TypeMapping:
     def __init__(self, name: str, color: str, type_keys: List[str]):
@@ -21,13 +21,13 @@ class TypeMapping:
         return type_key in self.type_keys
 
 
-TYPE_MAPPINGS = [TypeMapping("Unknown", 'red', []),
-                 TypeMapping("Running", 'deepskyblue', ['running', 'track_running', 'trail_running']),
-                 TypeMapping('Inline', 'limegreen', ['inline_skating']),
-                 TypeMapping('Skiing', 'deeppink', ['resort_skiing', 'resort_snowboarding', 'resort_skiing_snowboarding_ws']),
-                 TypeMapping('Crosscountry', 'magenta', ['skate_skiing_ws', 'cross_country_skiing_ws', 'backcountry_skiing']),
-                 TypeMapping('Hiking', 'yellow', ['hiking', 'walking']),
-                 TypeMapping('Cycling', 'darkorange', ['cycling', 'mountain_biking', 'gravel_cycling'])]
+TYPE_MAPPINGS = [TypeMapping("Unknown", 'crimson', []),
+                 TypeMapping("Running", 'magenta', ['running', 'track_running', 'trail_running']),
+                 TypeMapping('Inline', 'blueviolet', ['inline_skating']),
+                 TypeMapping('Skiing', 'red', ['resort_skiing', 'resort_snowboarding', 'resort_skiing_snowboarding_ws']),
+                 TypeMapping('Crosscountry', 'dodgerblue', ['skate_skiing_ws', 'cross_country_skiing_ws', 'backcountry_skiing']),
+                 TypeMapping('Hiking', 'orangered', ['hiking', 'walking']),
+                 TypeMapping('Cycling', 'deeppink', ['cycling', 'mountain_biking', 'gravel_cycling'])]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,20 +81,56 @@ def create_popup_html(activity: Activity):
     return f"{activity.date}<br>{type_mapping.name}<br>{activity.name}<br>{activity.distance} km, {formatted_duration}<br><a href='{ACTIVITY_URL}{activity.activity_id}' target='_blank'>Activity {activity.activity_id}</a>"
 
 
+def load_mapy_cz_api_key() -> str:
+    if os.path.exists(MAPY_CZ_API_KEY_FILENAME):
+        with open(MAPY_CZ_API_KEY_FILENAME, 'r') as file:
+            return file.read().strip()
+    else:
+        return None
+
+
+def create_map():
+    # Create a map centered at Prague
+    activities_map = folium.Map(location=[50.0755, 14.4378], zoom_start=8, tiles=None)
+
+    # Use Mapy.cz for map tiles, if API key is present.
+    # Mapy.cz are in my opinion the best outdoor map for Central Europe region.
+    # They however require an API key to work. It is free for usual cases.
+    # Visit https://developer.mapy.cz/en/rest-api-mapy-cz/api-key/
+    api_key = load_mapy_cz_api_key()
+    if api_key:
+        folium.TileLayer(
+            tiles='https://api.mapy.cz/v1/maptiles/outdoor/256/{z}/{x}/{y}?apikey=' + api_key,
+            attr='<a href="https://api.mapy.cz/copyright" target="_blank">© Seznam.cz a.s. a další</a>',
+            name='Mapy.cz'
+        ).add_to(activities_map)
+    else:
+        logger.info(
+            f"API KEY for Mapy.cz not found. If you want to use Mapy.cz tiles, generate API key and store it in {MAPY_CZ_API_KEY_FILENAME}")
+
+    folium.TileLayer(tiles='OpenStreetMap', name="OSM").add_to(activities_map)
+    folium.TileLayer(tiles='cartodbdark_matter', name="Dark").add_to(activities_map)
+    folium.TileLayer(tiles='cartodbpositron', name="Light").add_to(activities_map)
+
+    folium.plugins.Fullscreen(
+        position="topleft",
+        title="Fullscreen",
+        title_cancel="Exit",
+        force_separate_button=False,
+    ).add_to(activities_map)
+
+    folium.plugins.LocateControl(auto_start=False, keepCurrentZoomLevel=True).add_to(activities_map)
+    return activities_map
+
+
 logger.info(f"Reading activities from {ACTIVITIES_DATABASE}")
 activities = load_activities_from_csv(ACTIVITIES_DATABASE)
 logger.info(f"Found {len(activities)} activities")
 
-# Create a map centered at Prague
-activities_map = folium.Map(location=[50.0755, 14.4378], zoom_start=8)
-folium.TileLayer(tiles='OpenStreetMap').add_to(activities_map)
-folium.TileLayer(tiles='OpenTopoMap').add_to(activities_map)
-folium.TileLayer(tiles='Esri.WorldTopoMap').add_to(activities_map)
-folium.TileLayer(tiles='cartodbpositron').add_to(activities_map)
-folium.TileLayer(tiles='cartodbdark_matter').add_to(activities_map)
-
+activities_map = create_map()
 add_activities_to_map(activities, activities_map)
-folium.LayerControl(collapsed=False).add_to(activities_map)
+# is it best to add LayerControl as the last item to make it work properly
+folium.LayerControl(collapsed=True, draggable=True, position="topleft").add_to(activities_map)
 
 # Save the map to an HTML file
 activities_map.save(OUTPUT_MAP_FILENAME)
