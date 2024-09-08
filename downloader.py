@@ -1,6 +1,7 @@
 import csv
 import datetime
 import json
+import os.path
 from typing import List
 
 import gpxpy
@@ -78,7 +79,9 @@ def download_activities(api, from_date=None, to_date=None):
 
 def map_to_object(api_activity):
     activity_id = api_activity.get('activityId')
-    date = datetime.datetime.fromisoformat(api_activity.get('startTimeLocal')).strftime("%Y-%m-%d")
+    time_object = datetime.datetime.fromisoformat(api_activity.get('startTimeLocal'))
+    date = time_object.strftime("%Y-%m-%d")
+    time = time_object.strftime("%H:%M")
     activity_type = api_activity.get('activityType', {}).get('typeKey')
     activity_filename = f"{date}_{activity_id}_{activity_type}"
 
@@ -86,6 +89,7 @@ def map_to_object(api_activity):
                     distance=round(api_activity.get('distance') / 1000, 2) if api_activity.get('distance') else 0,
                     duration=round(api_activity.get('duration') / 60, 1),
                     date=date,
+                    time=time,
                     filename=activity_filename,
                     has_gps_data=False,
                     activity_type=activity_type,
@@ -163,10 +167,63 @@ def reload_activity(api, activity_id):
     update_activity(activity)
 
 
+def regenerate_csv():
+    csv_filename = ACTIVITIES_DATABASE
+    existing_activities = load_activities_from_csv(csv_filename, False)
+    for activity in existing_activities:
+        if not os.path.exists(activity.json_filename):
+            print(f"{activity.json_filename} does not exist")
+            exit(1)
+        with open(activity.json_filename, mode='r') as json_file:
+            activity_json = json.load(json_file)
+        # this piece of code was used to add a time field to the CSV database
+        # change it to whatever operation is needed
+        if activity_json.get('startTimeLocal'):
+            start_time_field = activity_json.get('startTimeLocal')
+        else:
+            start_time_field = activity_json.get('summaryDTO').get('startTimeLocal')
+        time_object = datetime.datetime.fromisoformat(start_time_field)
+        activity.time = time_object.strftime("%H:%M")
+
+    new_filename = csv_filename + datetime.datetime.now().strftime("%y%m%d%H%M%s")
+    logger.info(f"Saving back up of the original database as {new_filename}")
+    os.rename(csv_filename, new_filename)
+    with open(csv_filename, mode='w', newline='') as csv_file:
+        writer = create_writer(csv_file)
+        writer.writeheader()
+
+        for activity in existing_activities:
+            write_activity(writer, activity)
+
+        logger.info(f"Created {csv_file.name} with {len(existing_activities)} activities")
+
+
+# ##########################################################
 # Main program
-# regenerate_coordinates()
+# ##########################################################
 
-api = init_api()
-download_activities(api)
+# Choose mode of operation
+#   DOWNLOAD
+#       - Download recent activities from GarminConnect to update local state to latest
+#   REDOWNLOAD
+#       - Download specific activity (provide activityId below) from GarminConnect and overwrite it locally.
+#       - To be used when an older activity is modified in GC
+#   REGENERATE_COORDINATES
+#       - Regenerate all coordinate files from locally stored activity files
+#       - To be used e.g. when you change format of the coordinate files or when you experiment with simplification factor
+#   REGENERATE_CSV
+#       - Regenerate the CSV file by reading it and writing it again
+#       - To be used e.g. when you change format of the data or add a column
+mode = "DOWNLOAD"
+activity_id = None    # only relevant for REDOWNLOAD mode, e.g. 1700000403
 
-# reload_activity(api, 1700000403)
+if mode == "DOWNLOAD":
+    api = init_api()
+    download_activities(api)
+elif mode == "REDOWNLOAD":
+    api = init_api()
+    reload_activity(api, activity_id)
+elif mode == "REGENERATE_COORDINATES":
+    regenerate_coordinates()
+elif mode == "REGENERATE_CSV":
+    regenerate_csv()

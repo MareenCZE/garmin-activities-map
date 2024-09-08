@@ -9,6 +9,9 @@ ACTIVITIES_DATABASE = 'data/activities_list.csv'
 DIRECTORY_JSON = 'data/json'
 DIRECTORY_GPX = 'data/gpx'
 DIRECTORY_COORDS = 'data/coordinates'
+# Round coordinates to a certain number of decimal places. Higher number means higher precision. Lower number means smaller size of
+# the resulting page. Five decimal places should give around 1m precision and reduces size by 1/3.
+COORDINATE_DECIMAL_PLACES = 5
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
@@ -21,11 +24,12 @@ def init_directories():
 
 
 class Activity:
-    def __init__(self, activity_id, distance, duration, date, filename, has_gps_data, activity_type, name):
+    def __init__(self, activity_id, distance, duration, date, time, filename, has_gps_data, activity_type, name):
         self.activity_id = activity_id
         self.distance = float(distance)
         self.duration = float(duration)
         self.date = date
+        self.time = time
         self.filename = filename
         self.coords_filename = f"{DIRECTORY_COORDS}/{filename}.csv"
         self.json_filename = f"{DIRECTORY_JSON}/{filename}.json"
@@ -40,7 +44,7 @@ class Activity:
             self.coordinates = read_coordinates(self.coords_filename)
 
     def __str__(self):
-        return f"Activity({self.activity_id}, {self.date}, {self.name})"
+        return f"Activity({self.activity_id}, {self.date} {self.time}, {self.name})"
 
 
 def load_activities_from_csv(csv_filename, load_coordinates=True):
@@ -53,6 +57,7 @@ def load_activities_from_csv(csv_filename, load_coordinates=True):
                 distance=float(row['distance']),
                 duration=float(row['duration']),
                 date=row['date'],
+                time=row['time'],
                 has_gps_data=True if row['has_gps_data'] == 'True' else False,
                 filename=row['filename'],
                 activity_type=row['type'],
@@ -70,9 +75,9 @@ def read_coordinates(filename):
     with open(filename, mode='r', newline='') as coords_file:
         reader = csv.DictReader(coords_file)
         for row in reader:
-            latitude = float(row['latitude'])
-            longitude = float(row['longitude'])
-            coordinates.append((latitude, longitude))
+            latitude = round(float(row['latitude']), COORDINATE_DECIMAL_PLACES)
+            longitude = round(float(row['longitude']), COORDINATE_DECIMAL_PLACES)
+            coordinates.append([latitude, longitude])
     return coordinates
 
 
@@ -91,6 +96,7 @@ def write_activity(writer, activity: Activity):
          'activity_id': activity.activity_id,
          'type': activity.activity_type,
          'date': activity.date,
+         'time': activity.time,
          'duration': activity.duration,
          'distance': activity.distance,
          'filename': activity.filename,
@@ -98,7 +104,7 @@ def write_activity(writer, activity: Activity):
 
 
 def create_writer(file_handler):
-    fieldnames = ['date', 'type', 'duration', 'distance', 'activity_id', 'name', 'filename', 'has_gps_data']
+    fieldnames = ['date', 'time', 'type', 'duration', 'distance', 'activity_id', 'name', 'filename', 'has_gps_data']
     return csv.DictWriter(file_handler, fieldnames=fieldnames)
 
 

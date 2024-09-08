@@ -5,11 +5,13 @@ from typing import List
 
 import folium
 import folium.plugins
+
 from storage import load_activities_from_csv, Activity, ACTIVITIES_DATABASE
 
 OUTPUT_MAP_FILENAME = 'data/activities_map.html'
 MAPY_CZ_API_KEY_FILENAME = '.auth/mapy_cz_api_key.txt'
 ACTIVITY_URL = "https://connect.garmin.com/modern/activity/"
+
 
 class TypeMapping:
     def __init__(self, name: str, color: str, type_keys: List[str]):
@@ -58,13 +60,31 @@ def add_activities_to_map(activities, map):
             logger.debug(f"Skipping due to missing coordinates - {activity}")
             continue
         type_mapping = get_type_mapping(activity.activity_type)
-        polyline = folium.PolyLine(activity.coordinates, color=type_mapping.color, weight=3, opacity=0.8,
-                                   smooth_factor=3)
-        popup = folium.Popup(create_popup_html(activity), max_width=300)
-        polyline.add_child(popup)
-
+        popup = folium.Popup(create_popup_html(activity), max_width=500)
         feature_group = feature_groups.setdefault(type_mapping.name, folium.FeatureGroup(type_mapping.name))
-        polyline.add_to(feature_group)
+        folium.PolyLine(activity.coordinates, color=type_mapping.color, weight=3, opacity=0.8,
+                                   smooth_factor=3, popup=popup
+                                   ).add_to(feature_group)
+
+        # folium.GeoJson(
+        #     {
+        #         "type": "Feature",
+        #         "geometry": {
+        #             "type": "LineString",
+        #             "coordinates": activity.coordinates
+        #         },
+        #         "properties": {
+        #             "style": {"color": type_mapping.color}
+        #         }
+        #     },
+        #     popup=popup,
+        #     style_function=lambda x: x["properties"]["style"],
+        #     highlight_function=lambda x: {"color": "lime"},
+        #     popup_keep_highlighted=True
+        # ).add_to(feature_group)
+        # 12.8 MB - using GeoJson with highlighting on mouse hover
+        #  8.6 MB - using polylines
+
         activities_count += 1
 
     for feature_group in feature_groups.values():
@@ -78,7 +98,7 @@ def create_popup_html(activity: Activity):
     hours, minutes = divmod(activity.duration, 60)
     formatted_duration = f"{int(hours):0}h {int(minutes):0}m"
     type_mapping = get_type_mapping(activity.activity_type)
-    return f"{activity.date}<br>{type_mapping.name}<br>{activity.name}<br>{activity.distance} km, {formatted_duration}<br><a href='{ACTIVITY_URL}{activity.activity_id}' target='_blank'>Activity {activity.activity_id}</a>"
+    return f"{activity.date} {activity.time}<br>{type_mapping.name}<br>{activity.name}<br>{activity.distance} km, {formatted_duration}<br><a href='{ACTIVITY_URL}{activity.activity_id}' target='_blank'>Activity {activity.activity_id}</a>"
 
 
 def load_mapy_cz_api_key() -> str:
@@ -134,5 +154,5 @@ folium.LayerControl(collapsed=True, draggable=True, position="topleft").add_to(a
 
 # Save the map to an HTML file
 activities_map.save(OUTPUT_MAP_FILENAME)
-logger.info(f"Generated {OUTPUT_MAP_FILENAME}")
+logger.info(f"Generated {OUTPUT_MAP_FILENAME}. Size: {round(os.path.getsize(OUTPUT_MAP_FILENAME) / 1048576, 1)} MB")
 # using jsmin it is possible to reduce size of the file by ˜1 MB
