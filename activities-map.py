@@ -7,6 +7,7 @@ import folium
 import folium.plugins
 
 from storage import load_activities_from_csv, Activity, ACTIVITIES_DATABASE
+from ftpuploader import upload_file_to_ftp
 
 OUTPUT_MAP_FILENAME = 'data/activities_map.html'
 MAPY_CZ_API_KEY_FILENAME = '.auth/mapy_cz_api_key.txt'
@@ -156,3 +157,5 @@ folium.LayerControl(collapsed=True, draggable=True, position="topleft").add_to(a
 activities_map.save(OUTPUT_MAP_FILENAME)
 logger.info(f"Generated {OUTPUT_MAP_FILENAME}. Size: {round(os.path.getsize(OUTPUT_MAP_FILENAME) / 1048576, 1)} MB")
 # using jsmin it is possible to reduce size of the file by ˜1 MB
+
+upload_file_to_ftp(OUTPUT_MAP_FILENAME)

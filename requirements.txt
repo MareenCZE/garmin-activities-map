@@ -10,7 +10,7 @@ executing==2.0.1
 fit==0.4.1
 fitfile==1.1.7
 folium==0.17.0
-garminconnect==0.2.19
+garminconnect~=0.2.18
 garth==0.4.46
 gpxpy==1.6.2
 idbutils==1.1.0
@@ -61,3 +61,5 @@ wcwidth==0.2.13
 widgetsnbextension==4.0.10
 withings-sync==4.2.4
 xyzservices==2024.4.0
+
+cryptography~=43.0.1

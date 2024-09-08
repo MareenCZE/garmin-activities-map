@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import logging
-import os
 from getpass import getpass
 
 import requests

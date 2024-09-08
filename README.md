@@ -23,8 +23,9 @@ Links
 
 TODO
 - reduce size of javascript code. Generated code is very repetitive
-  - try https://github.com/google/closure-compiler
-  - see https://andrewpwheeler.com/2024/08/04/reducing-folium-map-sizes/
+    - try https://github.com/google/closure-compiler
+    - see https://andrewpwheeler.com/2024/08/04/reducing-folium-map-sizes/
+- highlight selected activity (commented out for now, increases size)
+- put it online - hosting with python and storage, lambdas?
 - update readme
-- put it online
 - filtering by year, lazy loading
