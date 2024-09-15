@@ -14,6 +14,11 @@ was needed because large number of activities had incorrect activity type simply
 were not available on my device back then.
 I also used these to upload manual activities in cases where I only had some basic stats about the activity without
 any GPS data.
+
+Hint how to create a manual activity with gps coordinates. Create the route on mapy.cz - use Directions and enter arbitrary
+number of points, adjust as needed. Export as GPX. Add timestamp to each point in GPX (required by GC) - replace </trkpt> with
+something like <time>2009-10-08T10:00:00.000Z</time>\n</trkpt>. Import it into GC. Edit the activity to add duration,
+activity type and name.
 """
 
 import csv

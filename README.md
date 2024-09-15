@@ -22,9 +22,7 @@ Links
  - https://github.com/polyvertex/fitdecode
 
 TODO
-- reduce size of javascript code. Generated code is very repetitive
-    - try https://github.com/google/closure-compiler
-    - see https://andrewpwheeler.com/2024/08/04/reducing-folium-map-sizes/
+- refactoring to create main controller class
 - highlight selected activity (commented out for now, increases size)
 - put it online - hosting with python and storage, lambdas?
 - update readme

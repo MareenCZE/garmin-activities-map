@@ -5,6 +5,7 @@ from typing import List
 
 import folium
 import folium.plugins
+import minifier
 
 from storage import load_activities_from_csv, Activity, ACTIVITIES_DATABASE
 from ftpuploader import upload_file_to_ftp
@@ -155,7 +156,11 @@ folium.LayerControl(collapsed=True, draggable=True, position="topleft").add_to(a
 
 # Save the map to an HTML file
 activities_map.save(OUTPUT_MAP_FILENAME)
-logger.info(f"Generated {OUTPUT_MAP_FILENAME}. Size: {round(os.path.getsize(OUTPUT_MAP_FILENAME) / 1048576, 1)} MB")
-# using jsmin it is possible to reduce size of the file by ˜1 MB
+logger.info(f"Generated {OUTPUT_MAP_FILENAME}. Size: {round(os.path.getsize(OUTPUT_MAP_FILENAME) / 1048576, 2)} MB")
 
-upload_file_to_ftp(OUTPUT_MAP_FILENAME)
+minified_output_filename = minifier.minify(OUTPUT_MAP_FILENAME)
+logger.info(f"Minified output saved into {minified_output_filename}. Size: {round(os.path.getsize(minified_output_filename) / 1048576, 2)} MB")
+
+upload_file_to_ftp(minified_output_filename)
+
+
