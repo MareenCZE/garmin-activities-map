@@ -79,15 +79,17 @@ def download_activities(api, from_date=None, to_date=None):
 
 def map_to_object(api_activity):
     activity_id = api_activity.get('activityId')
-    time_object = datetime.datetime.fromisoformat(api_activity.get('startTimeLocal'))
+    time_object = get_datetime_from_activity(api_activity)
     date = time_object.strftime("%Y-%m-%d")
     time = time_object.strftime("%H:%M")
-    activity_type = api_activity.get('activityType', {}).get('typeKey')
+    activity_type = api_activity.get('activityType').get('typeKey') if 'activityType' in api_activity else api_activity.get('activityTypeDTO', {}).get('typeKey', None)
     activity_filename = f"{date}_{activity_id}_{activity_type}"
+    distance = api_activity.get('distance') if 'distance' in api_activity else api_activity.get('summaryDTO', {}).get('distance', 0)
+    duration = api_activity.get('duration') if 'duration' in api_activity else api_activity.get('summaryDTO', {}).get('duration', 0)
 
     return Activity(activity_id=activity_id,
-                    distance=round(api_activity.get('distance') / 1000, 2) if api_activity.get('distance') else 0,
-                    duration=round(api_activity.get('duration') / 60, 1),
+                    distance=round(distance / 1000, 2),
+                    duration=round(duration / 60, 1),
                     date=date,
                     time=time,
                     filename=activity_filename,
@@ -167,6 +169,14 @@ def reload_activity(api, activity_id):
     update_activity(activity)
 
 
+def get_datetime_from_activity(activity_json: json):
+    if activity_json.get('startTimeLocal'):
+        start_time_field = activity_json.get('startTimeLocal')
+    else:
+        start_time_field = activity_json.get('summaryDTO').get('startTimeLocal')
+    return datetime.datetime.fromisoformat(start_time_field)
+
+
 def regenerate_csv():
     csv_filename = ACTIVITIES_DATABASE
     existing_activities = load_activities_from_csv(csv_filename, False)
@@ -178,14 +188,10 @@ def regenerate_csv():
             activity_json = json.load(json_file)
         # this piece of code was used to add a time field to the CSV database
         # change it to whatever operation is needed
-        if activity_json.get('startTimeLocal'):
-            start_time_field = activity_json.get('startTimeLocal')
-        else:
-            start_time_field = activity_json.get('summaryDTO').get('startTimeLocal')
-        time_object = datetime.datetime.fromisoformat(start_time_field)
+        time_object = get_datetime_from_activity(activity_json)
         activity.time = time_object.strftime("%H:%M")
 
-    new_filename = csv_filename + datetime.datetime.now().strftime("%y%m%d%H%M%s")
+    new_filename = csv_filename + datetime.datetime.now().strftime("%y%m%d%H%M%S")
     logger.info(f"Saving back up of the original database as {new_filename}")
     os.rename(csv_filename, new_filename)
     with open(csv_filename, mode='w', newline='') as csv_file:
