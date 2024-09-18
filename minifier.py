@@ -20,8 +20,8 @@ from common import logger
 #   - after compiling with Google Closure:  6.34 MB (i.e. overall reduction by ~28%)
 #
 # Note that your web server and browser likely support compression and therefore transferred size will be even less: 1.54 MB in my case.
-def minify(filename: str) -> str:
-    with open(filename, "r") as map_file:
+def minify(original_filename: str, output_filename: str) -> str:
+    with open(original_filename, "r") as map_file:
         html = map_file.read()
 
     html_match = re.match(r"^(.+</body>\s*<script>)(.*)(</script>.*)$", html, re.DOTALL)
@@ -99,10 +99,7 @@ def minify(filename: str) -> str:
     with open(min_js_filename, "r") as js_file:
         js = js_file.read()
 
-    output_filename = filename.replace(".html", ".min.html")
     with open(output_filename, "w") as min_map_file:
         min_map_file.write(html_match[1])
         min_map_file.write(js)
         min_map_file.write(html_match[3])
-
-    return output_filename

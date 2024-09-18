@@ -1,9 +1,10 @@
 import csv
 import datetime
-import logging
 import os
 import shutil
 from typing import List
+
+from common import logger
 
 ACTIVITIES_DATABASE = 'data/activities_list.csv'
 DIRECTORY_JSON = 'data/json'
@@ -12,9 +13,6 @@ DIRECTORY_COORDS = 'data/coordinates'
 # Round coordinates to a certain number of decimal places. Higher number means higher precision. Lower number means smaller size of
 # the resulting page. Five decimal places should give around 1m precision and reduces size by 1/3.
 COORDINATE_DECIMAL_PLACES = 5
-
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-logger = logging.getLogger(__name__)
 
 
 def init_directories():
@@ -47,9 +45,10 @@ class Activity:
         return f"Activity({self.activity_id}, {self.date} {self.time}, {self.name})"
 
 
-def load_activities_from_csv(csv_filename, load_coordinates=True):
+def load_activities_from_csv(load_coordinates=True):
     activities = []
-    with open(csv_filename, mode='r', newline='') as csv_file:
+    logger.info(f"Reading activities from {ACTIVITIES_DATABASE}")
+    with open(ACTIVITIES_DATABASE, mode='r', newline='') as csv_file:
         reader = csv.DictReader(csv_file)
         for row in reader:
             activity = Activity(
@@ -81,7 +80,7 @@ def read_coordinates(filename):
     return coordinates
 
 
-def write_database(activities: List[Activity], filename):
+def write_database(activities: List[Activity], filename=ACTIVITIES_DATABASE):
     logger.info(f"Writing into {filename}")
     with open(filename, mode='w', newline='') as csv_file:
         writer = create_writer(csv_file)
@@ -103,6 +102,11 @@ def write_activity(writer, activity: Activity):
          'has_gps_data': str(activity.has_gps_data)})
 
 
+def create_appender(filename=ACTIVITIES_DATABASE):
+    logger.info(f"Output going into {filename}")
+    return open(filename, mode='a', newline='')
+
+
 def create_writer(file_handler):
     fieldnames = ['date', 'time', 'type', 'duration', 'distance', 'activity_id', 'name', 'filename', 'has_gps_data']
     return csv.DictWriter(file_handler, fieldnames=fieldnames)
@@ -115,7 +119,7 @@ def load_and_backup():
     logger.info(f"Creating a backup - {backup_filename}")
     shutil.copy2(ACTIVITIES_DATABASE, backup_filename)
 
-    activities = load_activities_from_csv(ACTIVITIES_DATABASE, False)
+    activities = load_activities_from_csv(False)
     logger.info(f"Loaded {len(activities)} activities")
     return activities
 
@@ -171,5 +175,3 @@ def update_activity(new_activity: Activity):
     index = activities.index(old_activity)
     activities[index] = new_activity
     write_database(activities, ACTIVITIES_DATABASE)
-
-# resort_database()

@@ -22,8 +22,8 @@ Links
  - https://github.com/polyvertex/fitdecode
 
 TODO
-- refactoring to create main controller class
 - highlight selected activity (commented out for now, increases size)
+- resolve python-garminconnect fork
 - put it online - hosting with python and storage, lambdas?
 - update readme
 - filtering by year, lazy loading
