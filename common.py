@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 token_store = ".auth/"
 
 
-def init_api():
+def init_api() -> Garmin:
     """Initialize Garmin API with your credentials."""
 
     try:

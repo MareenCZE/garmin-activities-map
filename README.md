@@ -22,8 +22,8 @@ Links
  - https://github.com/polyvertex/fitdecode
 
 TODO
-- highlight selected activity (commented out for now, increases size)
 - resolve python-garminconnect fork
-- put it online - hosting with python and storage, lambdas?
+- resolve Closure warnings
 - update readme
-- filtering by year, lazy loading
+- find all activities in a selection rectangle
+- put it online - hosting with python and storage, lambdas?

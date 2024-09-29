@@ -41,7 +41,11 @@ class Mode:
         #  - OFF
         self.utility_mode = "OFF"
 
+        # ID of activity to redownload. Applies only when downloader_mode==REDOWNLOAD
         self.activity_id = None
+        # Highlight activities on mouse hover. Makes output larger (7.8 MB instead of 6.3 MB after minification).
+        # Applies only when map_creator_mode==ON
+        self.enable_activity_highlighting = True
 
 
 # ##########################################################
@@ -60,7 +64,7 @@ if mode.map_creator_mode == "ON":
     activities = storage.load_activities_from_csv()
     logger.info(f"Loaded {len(activities)} activities")
 
-    mapgenerator.create_map_with_activities(activities, OUTPUT_MAP_FILENAME)
+    mapgenerator.create_map_with_activities(activities, OUTPUT_MAP_FILENAME, mode.enable_activity_highlighting)
     logger.info(f"Generated {OUTPUT_MAP_FILENAME}. Size: {round(os.path.getsize(OUTPUT_MAP_FILENAME) / 1048576, 2)} MB")
 
 if mode.minifier_mode == "ON":

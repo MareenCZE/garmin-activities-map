@@ -3,7 +3,7 @@ import datetime
 import json
 import os.path
 from typing import List
-
+from garminconnect import Garmin
 import gpxpy
 from simplification.cutil import simplify_coords
 
@@ -24,7 +24,7 @@ GPX files..   1.2 GB (all the GPX data, including heartrate etc.)"""
 COORDS_SIMPLIFICATION_FACTOR = 0.0001
 
 
-def download_activities(api, from_date=None, to_date=None):
+def download_activities(api: Garmin, from_date=None, to_date=None):
     """
     Get activities from GarminConnect within a specified date range and save them to files.
     Appends to a CSV file which is stored as a database of all activities with some basic information about them.
@@ -96,7 +96,7 @@ def map_to_object(api_activity):
                             name=api_activity.get('activityName'))
 
 
-def save_json_and_gpx(api, activity: storage.Activity, api_activity):
+def save_json_and_gpx(api: Garmin, activity: storage.Activity, api_activity):
     logger.info(f"Writing {activity.json_filename}")
     with open(activity.json_filename, 'w') as json_file:
         json.dump(api_activity, json_file)
@@ -158,14 +158,14 @@ def regenerate_coordinates():
             regenerate_simplified_coordinates(activity)
 
 
-def reload_activity(api, activity_id):
+def reload_activity(api: Garmin, activity_id):
     logger.info(f"Re-downloading activity {activity_id}")
     api_activity = api.get_activity(activity_id)
     if not api_activity:
         logger.warning(f"No activity {activity_id} found")
         return
     activity = map_to_object(api_activity)
-    save_json_and_gpx(activity, api_activity)
+    save_json_and_gpx(api, activity, api_activity)
     storage.update_activity(activity)
 
 

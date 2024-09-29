@@ -77,6 +77,13 @@ def minify(original_filename: str, output_filename: str) -> str:
     for group in groups:
         js = group.method_def + js + "\n"
 
+    # When generating elements that are highlighted on mouse hover events, following is required to avoid Closure compiler replacing
+    # event names with generated placeholders
+    js = js.replace("mouseout:", "'mouseout':")
+    js = js.replace("mouseover:", "'mouseover':")
+    js = js.replace("popupopen:", "'popupopen':")
+    js = js.replace("popupclose:", "'popupclose':")
+
     # Write javascript to a separate file, run it through Google Closure Compiler and read it back to a variable
     with open("data/map.js", "w") as js_file:
         js_file.write(js)
@@ -92,6 +99,7 @@ def minify(original_filename: str, output_filename: str) -> str:
     if os.path.exists(min_js_filename):
         os.remove(min_js_filename)
     logger.debug("Running closure compiler on the data/map.js")
+    # Add "--formatting=PRETTY_PRINT" to make the output a bit more readable
     subprocess.run(
         "java -jar closure-compiler-v20240317.jar externs.js data/map.js --compilation_level ADVANCED --js_output_file data/map.min.js",
         shell=True)

@@ -22,12 +22,12 @@ class TypeMapping:
         return type_key in self.type_keys
 
 
-TYPE_MAPPINGS = [TypeMapping("Unknown", 'crimson', []),
+TYPE_MAPPINGS = [TypeMapping("Other", 'grey', []),
                  TypeMapping("Running", 'magenta', ['running', 'track_running', 'trail_running']),
                  TypeMapping('Inline', 'blueviolet', ['inline_skating']),
                  TypeMapping('Skiing', 'red', ['resort_skiing', 'resort_snowboarding', 'resort_skiing_snowboarding_ws']),
                  TypeMapping('Crosscountry', 'dodgerblue', ['skate_skiing_ws', 'cross_country_skiing_ws', 'backcountry_skiing']),
-                 TypeMapping('Hiking', 'orangered', ['hiking', 'walking']),
+                 TypeMapping('Hiking', 'brown', ['hiking', 'walking']),
                  TypeMapping('Cycling', 'deeppink', ['cycling', 'mountain_biking', 'gravel_cycling'])]
 
 uncategorized_activity_types = set()
@@ -39,12 +39,12 @@ def get_type_mapping(type_key: str) -> TypeMapping:
             return mapping
 
     if type_key not in uncategorized_activity_types:
-        logger.info("Uncategorized activity type: " + type_key)
+        logger.debug(f"Unmapped activity type: {type_key}. Putting it into '{TYPE_MAPPINGS[0]}' category")
         uncategorized_activity_types.add(type_key)
     return TYPE_MAPPINGS[0]
 
 
-def add_activities_to_map(activities, map):
+def add_activities_to_map(activities, map, enable_highlighting=False):
     activities_count = 0
     feature_groups = {}
 
@@ -55,28 +55,37 @@ def add_activities_to_map(activities, map):
         type_mapping = get_type_mapping(activity.activity_type)
         popup = folium.Popup(create_popup_html(activity), max_width=500)
         feature_group = feature_groups.setdefault(type_mapping.name, folium.FeatureGroup(type_mapping.name))
-        folium.PolyLine(activity.coordinates, color=type_mapping.color, weight=3, opacity=0.8,
-                        smooth_factor=3, popup=popup
-                        ).add_to(feature_group)
 
-        # folium.GeoJson(
-        #     {
-        #         "type": "Feature",
-        #         "geometry": {
-        #             "type": "LineString",
-        #             "coordinates": activity.coordinates
-        #         },
-        #         "properties": {
-        #             "style": {"color": type_mapping.color}
-        #         }
-        #     },
-        #     popup=popup,
-        #     style_function=lambda x: x["properties"]["style"],
-        #     highlight_function=lambda x: {"color": "lime"},
-        #     popup_keep_highlighted=True
-        # ).add_to(feature_group)
-        # 12.8 MB - using GeoJson with highlighting on mouse hover
-        #  8.6 MB - using polylines
+        # Highlight activity on mouse hover or when selected. Produces a lot of JS code (12.8 MB vs 8.6 MB without it)
+        if enable_highlighting:
+            folium.GeoJson(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        # GeoJson Features use opposite order of coordinates than Polyline
+                        "coordinates": [[point[1], point[0]] for point in activity.coordinates]
+                    },
+                    "properties": {
+                        "style": {"color": type_mapping.color,
+                                  # "opacity": 0.8,
+                                  # "weight": 3
+                                  },
+                        # "smoothFactor": 3
+                    }
+                },
+                popup=popup,
+                smooth_factor=3,
+                style_function=lambda x: x["properties"]["style"],
+                # lambda x: {"color": type_mapping.color},
+                # lambda x: x["properties"]["style"],
+                highlight_function=lambda x: {"color": "lime"},
+                popup_keep_highlighted=True
+            ).add_to(feature_group)
+        else:
+            folium.PolyLine(activity.coordinates, color=type_mapping.color, weight=3, opacity=0.8,
+                            smooth_factor=3, popup=popup
+                            ).add_to(feature_group)
 
         activities_count += 1
 
@@ -136,9 +145,9 @@ def create_map():
     return activities_map
 
 
-def create_map_with_activities(activities, filename):
+def create_map_with_activities(activities, filename, enable_highlighting=False):
     activities_map = create_map()
-    add_activities_to_map(activities, activities_map)
+    add_activities_to_map(activities, activities_map, enable_highlighting)
     # is it best to add LayerControl as the last item to make it work properly
     folium.LayerControl(collapsed=True, draggable=True, position="topleft").add_to(activities_map)
 
