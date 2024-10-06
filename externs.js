@@ -1416,7 +1416,7 @@ L.GeoJSON.prototype.addData = function(data) {}
  */
 L.GeoJSON.prototype.resetStyle = function(layer) {}
 /**
- * @param {Function} style
+ * @param {L.PathOptions|Function} style
  * @returns {L.GeoJSON}
  */
 L.GeoJSON.prototype.setStyle = function(style) {}
@@ -2200,12 +2200,11 @@ L.extend = L.Util.extend;
  */
 L.Util.create = function(proto, properties) {}
 /**
- * @alias L.bind
- * @param {Function} fn
- * @param {...*} args
- * @returns {Function}
+ * @param {L.Util|null|undefined} context - The context to bind the function to.
+ * @param {...*} args - Additional arguments to bind to the function.
+ * @returns {function(...?): ?}
  */
-L.Util.bind = function(fn, ...args) {}
+L.Util.bind = function(context, ...args) {};
 /**
  * @param {Object} obj
  * @returns {number}

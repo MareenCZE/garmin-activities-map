@@ -41,7 +41,7 @@ class Mode:
         #  - OFF
         self.utility_mode = "OFF"
 
-        # ID of activity to redownload. Applies only when downloader_mode==REDOWNLOAD
+        # ID of activity to re-download. Applies only when downloader_mode==REDOWNLOAD
         self.activity_id = None
         # Highlight activities on mouse hover. Makes output larger (7.8 MB instead of 6.3 MB after minification).
         # Applies only when map_creator_mode==ON

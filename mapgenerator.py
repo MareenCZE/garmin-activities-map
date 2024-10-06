@@ -70,15 +70,12 @@ def add_activities_to_map(activities, map, enable_highlighting=False):
                         "style": {"color": type_mapping.color,
                                   # "opacity": 0.8,
                                   # "weight": 3
-                                  },
-                        # "smoothFactor": 3
+                                  }
                     }
                 },
                 popup=popup,
                 smooth_factor=3,
                 style_function=lambda x: x["properties"]["style"],
-                # lambda x: {"color": type_mapping.color},
-                # lambda x: x["properties"]["style"],
                 highlight_function=lambda x: {"color": "lime"},
                 popup_keep_highlighted=True
             ).add_to(feature_group)
