@@ -1,12 +1,10 @@
 import ftplib
-import json
-import os.path
 
 from cryptography.fernet import Fernet
 
-from common import logger
+from common import logger, config
 
-FTP_CONFIG_FILENAME = '.auth/ftp_config.json'
+# random key used to encrypt/decrypt FTP password
 CRYPTO_KEY = 'mMF32hspwbAhawquFRC070fczdWLb0nF3dX4fHd7R_k='
 
 
@@ -19,25 +17,22 @@ class FtpConfig:
         self.remote_filename = remote_filename
 
     @staticmethod
-    def load_from_file(filename: str):
-        logger.info(f"Reading FTP config from {filename}")
-        with open(filename, 'r') as config_file:
-            config_json = json.load(config_file)
-            return FtpConfig(
-                ftp_host=config_json.get('host'),
-                ftp_user=config_json.get('user'),
-                ftp_pass=decrypt(config_json.get('pass')),
-                remote_path=config_json.get('remotePath'),
-                remote_filename=config_json.get('remoteFilename')
-            )
+    def create_config(config_dict):
+        return FtpConfig(
+            ftp_host=config_dict['ftp']['host'],
+            ftp_user=config_dict['ftp']['user'],
+            ftp_pass=decrypt(config_dict['ftp']['pass']),
+            remote_path=config_dict['ftp']['remote-path'],
+            remote_filename=config_dict['ftp']['remote-filename']
+        )
 
 
 def upload_file_to_ftp(filename: str):
-    if not os.path.exists(FTP_CONFIG_FILENAME):
-        logger.info(f"Skipping upload to FTP - config {FTP_CONFIG_FILENAME} not found")
+    if not config["ftp"]["host"]:
+        logger.info(f"Skipping upload to FTP - no FTP config provided")
         return
 
-    ftp_config = FtpConfig.load_from_file(FTP_CONFIG_FILENAME)
+    ftp_config = FtpConfig.create_config(config)
     try:
         logger.info(f"Going to connect to {ftp_config.host} as {ftp_config.user}")
         ftp = ftplib.FTP(ftp_config.host)
@@ -61,10 +56,7 @@ def decrypt(encrypted_text):
     return decrypted_text
 
 
-def encrypt(input_string):
+def encrypt_password():
     cipher_suite = Fernet(CRYPTO_KEY)
-    encrypted_text = cipher_suite.encrypt(input_string.encode())
-    return encrypted_text
-
-# use to encrypt your password before storing it in the config json (not very secure but better than having it in plain text there)
-# print(encrypt("your ftp password"))
+    encrypted_text = cipher_suite.encrypt(config['ftp']['pass'].encode())
+    print(encrypted_text.decode())

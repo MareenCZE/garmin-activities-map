@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-import os.path
 from typing import List
 
 import folium
 import folium.plugins
 
-from common import logger
+from common import logger, config
 from storage import Activity
-
-MAPY_CZ_API_KEY_FILENAME = '.auth/mapy_cz_api_key.txt'
-ACTIVITY_URL = "https://connect.garmin.com/modern/activity/"
 
 
 class TypeMapping:
@@ -22,42 +18,44 @@ class TypeMapping:
         return type_key in self.type_keys
 
 
-TYPE_MAPPINGS = [TypeMapping("Other", 'grey', []),
-                 TypeMapping("Running", 'magenta', ['running', 'track_running', 'trail_running']),
-                 TypeMapping('Inline', 'blueviolet', ['inline_skating']),
-                 TypeMapping('Skiing', 'red', ['resort_skiing', 'resort_snowboarding', 'resort_skiing_snowboarding_ws']),
-                 TypeMapping('Crosscountry', 'dodgerblue', ['skate_skiing_ws', 'cross_country_skiing_ws', 'backcountry_skiing']),
-                 TypeMapping('Hiking', 'brown', ['hiking', 'walking']),
-                 TypeMapping('Cycling', 'deeppink', ['cycling', 'mountain_biking', 'gravel_cycling'])]
-
 uncategorized_activity_types = set()
 
 
-def get_type_mapping(type_key: str) -> TypeMapping:
-    for mapping in TYPE_MAPPINGS:
+def get_type_mappings():
+    mappings = []
+    for mapping in config['activities']['mapping']:
+        mappings.append(TypeMapping(mapping.get('name'), mapping.get('color'), mapping.get('type_keys')))
+    if len(mappings) == 0:
+        raise ValueError("No type mappings found. Cannot continue. Fix [map-tiles][tiles] config")
+    return mappings
+
+
+def get_type_mapping(mappings: [], type_key: str) -> TypeMapping:
+    for mapping in mappings:
         if mapping.contains_key(type_key):
             return mapping
 
     if type_key not in uncategorized_activity_types:
-        logger.debug(f"Unmapped activity type: {type_key}. Putting it into '{TYPE_MAPPINGS[0]}' category")
+        logger.debug(f"Unmapped activity type: {type_key}. Putting it into '{mappings[0]}' category")
         uncategorized_activity_types.add(type_key)
-    return TYPE_MAPPINGS[0]
+    return mappings[0]
 
 
-def add_activities_to_map(activities, map, enable_highlighting=False):
+def add_activities_to_map(activities, map):
     activities_count = 0
     feature_groups = {}
+    mappings = get_type_mappings()
 
     for activity in activities:
         if not activity.has_gps_data:
             logger.debug(f"Skipping due to missing coordinates - {activity}")
             continue
-        type_mapping = get_type_mapping(activity.activity_type)
-        popup = folium.Popup(create_popup_html(activity), max_width=500)
+        type_mapping = get_type_mapping(mappings, activity.activity_type)
+        popup = folium.Popup(create_popup_html(mappings, activity), max_width=500)
         feature_group = feature_groups.setdefault(type_mapping.name, folium.FeatureGroup(type_mapping.name))
 
         # Highlight activity on mouse hover or when selected. Produces a lot of JS code (12.8 MB vs 8.6 MB without it)
-        if enable_highlighting:
+        if config["activities"]["enable-activity-highlighting"]:
             folium.GeoJson(
                 {
                     "type": "Feature",
@@ -93,43 +91,41 @@ def add_activities_to_map(activities, map, enable_highlighting=False):
         f"Added {activities_count} activities with GPS data divided into {len(feature_groups.keys())} groups to the map")
 
 
-def create_popup_html(activity: Activity):
+def create_popup_html(mappings: [], activity: Activity):
     hours, minutes = divmod(activity.duration, 60)
     formatted_duration = f"{int(hours):0}h {int(minutes):0}m"
-    type_mapping = get_type_mapping(activity.activity_type)
-    return f"{activity.date} {activity.time}<br>{type_mapping.name}<br>{activity.name}<br>{activity.distance} km, {formatted_duration}<br><a href='{ACTIVITY_URL}{activity.activity_id}' target='_blank'>Activity {activity.activity_id}</a>"
+    type_mapping = get_type_mapping(mappings, activity.activity_type)
+    return f"{activity.date} {activity.time}<br>{type_mapping.name}<br>{activity.name}<br>{activity.distance} km, {formatted_duration}<br><a href='{config['activities']['garmin-connect-activity-url']}{activity.activity_id}' target='_blank'>Activity {activity.activity_id}</a>"
 
 
-def load_mapy_cz_api_key() -> str:
-    if os.path.exists(MAPY_CZ_API_KEY_FILENAME):
-        with open(MAPY_CZ_API_KEY_FILENAME, 'r') as file:
-            return file.read().strip()
-    else:
-        return None
-
-
-def create_map():
-    # Create a map centered at Prague
-    activities_map = folium.Map(location=[50.0755, 14.4378], zoom_start=8, tiles=None)
-
+def create_mapy_cz_tiles(name):
     # Use Mapy.cz for map tiles, if API key is present.
     # Mapy.cz are in my opinion the best outdoor map for Central Europe region.
     # They however require an API key to work. It is free for usual cases.
     # Visit https://developer.mapy.cz/en/rest-api-mapy-cz/api-key/
-    api_key = load_mapy_cz_api_key()
+    api_key = config['map-tiles']['mapy-cz-api-key']
     if api_key:
-        folium.TileLayer(
+        return folium.TileLayer(
             tiles='https://api.mapy.cz/v1/maptiles/outdoor/256/{z}/{x}/{y}?apikey=' + api_key,
             attr='<a href="https://api.mapy.cz/copyright" target="_blank">© Seznam.cz a.s. a další</a>',
-            name='Mapy.cz'
-        ).add_to(activities_map)
+            name=name
+        )
     else:
         logger.info(
-            f"API KEY for Mapy.cz not found. If you want to use Mapy.cz tiles, generate API key and store it in {MAPY_CZ_API_KEY_FILENAME}")
+            f"API KEY for Mapy.cz not found. If you want to use Mapy.cz tiles, generate API key and store it in your config")
+        return None
 
-    folium.TileLayer(tiles='OpenStreetMap', name="OSM").add_to(activities_map)
-    folium.TileLayer(tiles='cartodbdark_matter', name="Dark").add_to(activities_map)
-    folium.TileLayer(tiles='cartodbpositron', name="Light").add_to(activities_map)
+
+def create_map():
+    activities_map = folium.Map(location=config['map-tiles']['center-point'], zoom_start=8, tiles=None)
+
+    for tiles_config in config['map-tiles']['tiles']:
+        if tiles_config.get('tiles') == 'mapy.cz':
+            mapy_cz_tiles = create_mapy_cz_tiles(tiles_config.get('name'))
+            if mapy_cz_tiles:
+                mapy_cz_tiles.add_to(activities_map)
+        else:
+            folium.TileLayer(tiles=tiles_config.get('tiles'), name=tiles_config.get('name')).add_to(activities_map)
 
     folium.plugins.Fullscreen(
         position="topleft",
@@ -142,9 +138,9 @@ def create_map():
     return activities_map
 
 
-def create_map_with_activities(activities, filename, enable_highlighting=False):
+def create_map_with_activities(activities, filename):
     activities_map = create_map()
-    add_activities_to_map(activities, activities_map, enable_highlighting)
+    add_activities_to_map(activities, activities_map)
     # is it best to add LayerControl as the last item to make it work properly
     folium.LayerControl(collapsed=True, draggable=True, position="topleft").add_to(activities_map)
 
