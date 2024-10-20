@@ -116,8 +116,8 @@ def create_mapy_cz_tiles(name):
         return None
 
 
-def create_map():
-    activities_map = folium.Map(location=config['map-tiles']['center-point'], zoom_start=8, tiles=None)
+def create_map(center: []):
+    activities_map = folium.Map(location=center, zoom_start=config['map-tiles']['zoom-start'], tiles=None)
 
     for tiles_config in config['map-tiles']['tiles']:
         if tiles_config.get('tiles') == 'mapy.cz':
@@ -138,8 +138,24 @@ def create_map():
     return activities_map
 
 
+# Calculate center point of activities as an average of their start and end coordinates
+def calculate_map_center(activities: [Activity]) -> []:
+    center = config['map-tiles']['center-point']
+    if not center:
+        lat = lon = coord_count = 0
+        for activity in activities:
+            if activity.coordinates:
+                lat += activity.coordinates[0][0] + activity.coordinates[len(activity.coordinates) - 1][0]
+                lon += activity.coordinates[0][1] + activity.coordinates[len(activity.coordinates) - 1][1]
+                coord_count += 2
+        center = [lat / coord_count, lon / coord_count] if coord_count else center
+        logger.debug(f"Calculated center point from all activities: {center}")
+    return center
+
+
 def create_map_with_activities(activities, filename):
-    activities_map = create_map()
+    center = calculate_map_center(activities)
+    activities_map = create_map(center)
     add_activities_to_map(activities, activities_map)
     # is it best to add LayerControl as the last item to make it work properly
     folium.LayerControl(collapsed=True, draggable=True, position="topleft").add_to(activities_map)

@@ -48,8 +48,6 @@ Map controls allow for selection of background map, selection of activity catego
   * go to https://developer.mapy.cz/en/rest-api-mapy-cz/api-key/
   * generate your own API key
   * store the key in config-local.toml in [map-tiles] section as mapy-cz-api-key
-* only if you want to explicitly set center point of the map
-  * set coordinates in config-local.toml in [map-tiles] section as center-point
 * on the first run you will be asked for your Garmin credentials. It will then generate an authentication token which will be persisted 
 locally in .auth directory and will work for a year
 
@@ -113,7 +111,6 @@ on the [Leaflet JS](https://leafletjs.com) library.
 ## Ideas, todos
 
 * resolve python-garminconnect fork, consider extracting only the minimal required code into this project
-* calculate center point from activities
 * resolve Closure warnings
 * find all activities in a selection rectangle
 * put it online - hosting with python and storage

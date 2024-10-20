@@ -38,8 +38,11 @@ remote-filename = "index.html"
 
 # #####################################################################
 [map-tiles]
-# Opening center point of the map. Default is set to Prague. Put your override into config-local.toml
-center-point=[50.0755, 14.4378]
+# Opening center point of the map. Leave empty if you want to use a calculated middle point of all activities.
+# You can force using a specific point by putting an override into config-local.toml, e.g. [50.0755, 14.4378] for Prague.
+center-point = []
+# Initial zoom of the map. Default is 8.
+zoom-start = 8
 # If you want to use map tiles from Mapy.cz, put your personal API key as an override in config-local.toml.
 # See https://developer.mapy.cz/en/rest-api-mapy-cz/api-key/
 mapy-cz-api-key = ""

@@ -20,7 +20,7 @@ def init_api() -> Garmin:
 
     try:
         # Using Oauth1 and OAuth2 token files from directory
-        logger.info(f"Trying to login to Garmin Connect using token data from directory '{token_store}'...\n")
+        logger.info(f"Trying to login to Garmin Connect using token data from directory '{token_store}'")
 
         garmin = Garmin()
         garmin.login(token_store)
