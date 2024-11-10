@@ -34,9 +34,6 @@ Map controls allow for selection of background map, selection of activity catego
 ## How to get it working
 
 * install Python 3
-* currently requires custom fork of python-garminconnect to make it work
-  * https://github.com/MareenCZE/python-garminconnect
-  * check it out to your environment and run: "pip install -e ."
 * get python dependencies from requirements.txt
 * only if you want to upload resulting map to an FTP site
   * copy the [ftp] section from config-default.toml to config-local.toml and populate it with your personal values
@@ -110,7 +107,7 @@ on the [Leaflet JS](https://leafletjs.com) library.
 
 ## Ideas, todos
 
-* resolve python-garminconnect fork, consider extracting only the minimal required code into this project
+* add command line parameters to override config to allow for scheduling of automatic run
 * resolve Closure warnings
 * find all activities in a selection rectangle
 * put it online - hosting with python and storage
