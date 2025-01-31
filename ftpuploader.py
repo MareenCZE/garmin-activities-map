@@ -34,7 +34,7 @@ def upload_file_to_ftp(filename: str):
 
     ftp_config = FtpConfig.create_config(config)
     try:
-        logger.info(f"Going to connect to {ftp_config.host} as {ftp_config.user}")
+        logger.info(f"Connecting to {ftp_config.host} as {ftp_config.user}")
         ftp = ftplib.FTP(ftp_config.host)
         ftp.login(user=ftp_config.user, passwd=ftp_config.password)
         ftp.cwd(ftp_config.remote_path)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from typing import List
-
+import re
 import folium
 import folium.plugins
 
@@ -98,7 +98,7 @@ def create_popup_html(mappings: [], activity: Activity):
     return f"{activity.date} {activity.time}<br>{type_mapping.name}<br>{activity.name}<br>{activity.distance} km, {formatted_duration}<br><a href='{config['activities']['garmin-connect-activity-url']}{activity.activity_id}' target='_blank'>Activity {activity.activity_id}</a>"
 
 
-def create_mapy_cz_tiles(name):
+def create_mapy_cz_tiles(name, mapset="outdoor"):
     # Use Mapy.cz for map tiles, if API key is present.
     # Mapy.cz are in my opinion the best outdoor map for Central Europe region.
     # They however require an API key to work. It is free for usual cases.
@@ -106,7 +106,7 @@ def create_mapy_cz_tiles(name):
     api_key = config['map-tiles']['mapy-cz-api-key']
     if api_key:
         return folium.TileLayer(
-            tiles='https://api.mapy.cz/v1/maptiles/outdoor/256/{z}/{x}/{y}?apikey=' + api_key,
+            tiles='https://api.mapy.cz/v1/maptiles/' + mapset + '/256/{z}/{x}/{y}?apikey=' + api_key,
             attr='<a href="https://api.mapy.cz/copyright" target="_blank">© Seznam.cz a.s. a další</a>',
             name=name
         )
@@ -120,8 +120,8 @@ def create_map(center: []):
     activities_map = folium.Map(location=center, zoom_start=config['map-tiles']['zoom-start'], tiles=None)
 
     for tiles_config in config['map-tiles']['tiles']:
-        if tiles_config.get('tiles') == 'mapy.cz':
-            mapy_cz_tiles = create_mapy_cz_tiles(tiles_config.get('name'))
+        if "mapy.cz" in tiles_config.get('tiles'):
+            mapy_cz_tiles = create_mapy_cz_tiles(tiles_config.get('name'), tiles_config.get('tiles').split('-')[1])
             if mapy_cz_tiles:
                 mapy_cz_tiles.add_to(activities_map)
         else:
@@ -162,3 +162,29 @@ def create_map_with_activities(activities, filename):
 
     # Save the map to an HTML file
     activities_map.save(filename)
+
+
+# Add date range filter
+# Somewhat hacky and not very robust way to inject additional javascript and html into the generated file
+def add_date_range_filter(filename):
+    with open(filename, "r") as map_file:
+        html = map_file.read()
+
+    head_addition = '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.5.0/nouislider.min.css">\n\
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.5.0/nouislider.min.js"></script>';
+
+    with open("date-filter.js", "r") as date_filter_file:
+        body_addition = date_filter_file.read()
+
+    body_addition = '<div id="date-slider" style="position: absolute; z-index: 1000; top: 0; left: 50px; width: 90%; margin-top: 10px; margin-left:20px; margin-right:20px"></div>\n\
+        <p style="margin-bottom:0; position: absolute; z-index: 1000; top: 35px; left: 70px; background: white">Date range: <span id="date-range"></span></p>\n\
+        <script>\n' + body_addition + '\n</script>\n'
+    html_match = re.match(r"^(.+)</head>.*<body>(.*)$", html, re.DOTALL)
+    with open(filename, "w") as map_file:
+        map_file.write(html_match[1])
+        map_file.write(head_addition)
+        map_file.write("\n</head>\n<body>\n")
+        map_file.write(body_addition)
+        map_file.write(html_match[2])
+
+    logger.debug("Added date range filter")

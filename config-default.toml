@@ -7,6 +7,8 @@
 downloader = "ON"
 # Generate map from activities? Supported values: ON and OFF
 map-creator = "ON"
+# Add date range filter to the generated map? WIP - Minifier not yet supported when date-filter enabled. Supported values: ON and OFF
+date-filter = "OFF"
 # Minify generated map? Supported values: ON and OFF
 minifier = "ON"
 # Upload the map to an FTP site? Supported values: ON and OFF
@@ -53,7 +55,8 @@ tiles = [
     { tiles='OpenStreetMap', name="OSM" },
     { tiles='cartodbdark_matter', name="Dark" },
     { tiles='cartodbpositron', name="Light" },
-    { tiles='mapy.cz', name="Mapy.cz" }
+    { tiles='mapy.cz-outdoor', name="Mapy.cz Outdoor" },
+    { tiles='mapy.cz-winter', name="Mapy.cz Winter" }
 ]
 
 # #####################################################################
@@ -67,9 +70,9 @@ enable-activity-highlighting = true
 mapping = [
     { name = "Other", color = "grey", type_keys = [] },
     { name = "Running", color = "magenta", type_keys = ["running", "track_running", "trail_running"] },
-    { name = "Inline", color = "blueviolet", type_keys = ["inline_skating"] },
+    { name = "Inline", color = "dodgerblue", type_keys = ["inline_skating"] },
     { name = "Skiing", color = "red", type_keys = ["resort_skiing", "resort_snowboarding", "resort_skiing_snowboarding_ws"] },
-    { name = "Crosscountry", color = "dodgerblue", type_keys = ["skate_skiing_ws", "cross_country_skiing_ws", "backcountry_skiing"] },
+    { name = "Crosscountry", color = "blueviolet", type_keys = ["skate_skiing_ws", "cross_country_skiing_ws", "backcountry_skiing"] },
     { name = "Hiking", color = "brown", type_keys = ["hiking", "walking"] },
     { name = "Cycling", color = "deeppink", type_keys = ["cycling", "mountain_biking", "gravel_cycling"] }
 ]

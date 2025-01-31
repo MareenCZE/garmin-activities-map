@@ -25,6 +25,8 @@ if config_mode["map-creator"] == "ON":
     logger.info(f"Loaded {len(activities)} activities")
 
     mapgenerator.create_map_with_activities(activities, output_map_filename)
+    if config_mode["date-filter"] == "ON":
+        mapgenerator.add_date_range_filter(output_map_filename)
     logger.info(f"Generated {output_map_filename}. Size: {round(os.path.getsize(output_map_filename) / 1048576, 2)} MB")
 
 if config_mode["minifier"] == "ON":
