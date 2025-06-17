@@ -55,8 +55,8 @@ tiles = [
     { tiles='OpenStreetMap', name="OSM" },
     { tiles='cartodbdark_matter', name="Dark" },
     { tiles='cartodbpositron', name="Light" },
-    { tiles='mapy.cz-outdoor', name="Mapy.cz Outdoor" },
-    { tiles='mapy.cz-winter', name="Mapy.cz Winter" }
+    { tiles='mapy.cz-winter', name="Mapy.cz Winter" },
+    { tiles='mapy.cz-outdoor', name="Mapy.cz Outdoor" }
 ]
 
 # #####################################################################
@@ -75,6 +75,11 @@ mapping = [
     { name = "Crosscountry", color = "blueviolet", type_keys = ["skate_skiing_ws", "cross_country_skiing_ws", "backcountry_skiing"] },
     { name = "Hiking", color = "brown", type_keys = ["hiking", "walking"] },
     { name = "Cycling", color = "deeppink", type_keys = ["cycling", "mountain_biking", "gravel_cycling"] }
+]
+# Define which categories are displayed when you open the page. Activities from other categories will not be displayed by default but
+# user can easily toggle categories on and off.
+display-mapping-on-load = [
+    "Other", "Running", "Inline", "Skiing", "Crosscountry", "Hiking", "Cycling"
 ]
 # It is not necessary to use all the full GPS coordinates. They are large and the level of detail is not needed for purposes of the map.
 # Therefore, using simplification utility to minimize size of the coordinates collection while still keeping almost the same shape of the

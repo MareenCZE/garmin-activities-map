@@ -9,10 +9,11 @@ from storage import Activity
 
 
 class TypeMapping:
-    def __init__(self, name: str, color: str, type_keys: List[str]):
+    def __init__(self, name: str, color: str, type_keys: List[str], show_on_load: bool):
         self.name = name
         self.color = color
         self.type_keys = type_keys
+        self.show_on_load = show_on_load
 
     def contains_key(self, type_key):
         return type_key in self.type_keys
@@ -24,7 +25,8 @@ uncategorized_activity_types = set()
 def get_type_mappings():
     mappings = []
     for mapping in config['activities']['mapping']:
-        mappings.append(TypeMapping(mapping.get('name'), mapping.get('color'), mapping.get('type_keys')))
+        show_on_load = mapping.get('name') in config['activities']['display-mapping-on-load']
+        mappings.append(TypeMapping(mapping.get('name'), mapping.get('color'), mapping.get('type_keys'), show_on_load))
     if len(mappings) == 0:
         raise ValueError("No type mappings found. Cannot continue. Fix [map-tiles][tiles] config")
     return mappings
@@ -52,7 +54,7 @@ def add_activities_to_map(activities, map):
             continue
         type_mapping = get_type_mapping(mappings, activity.activity_type)
         popup = folium.Popup(create_popup_html(mappings, activity), max_width=500)
-        feature_group = feature_groups.setdefault(type_mapping.name, folium.FeatureGroup(type_mapping.name))
+        feature_group = feature_groups.setdefault(type_mapping.name, folium.FeatureGroup(type_mapping.name, show=type_mapping.show_on_load))
 
         # Highlight activity on mouse hover or when selected. Produces a lot of JS code (12.8 MB vs 8.6 MB without it)
         if config["activities"]["enable-activity-highlighting"]:
@@ -171,7 +173,7 @@ def add_date_range_filter(filename):
         html = map_file.read()
 
     head_addition = '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.5.0/nouislider.min.css">\n\
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.5.0/nouislider.min.js"></script>';
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.5.0/nouislider.min.js"></script>'
 
     with open("date-filter.js", "r") as date_filter_file:
         body_addition = date_filter_file.read()
