@@ -81,6 +81,17 @@ Communication with Garmin Connect is based on [Python: Garmin Connect](https://g
 Map generation is done via the [Folium](https://python-visualization.github.io/folium/latest/index.html) library, which creates code based
 on the [Leaflet JS](https://leafletjs.com) library.
 
+### Known limitations
+Garmin does not allow to download GPX for long activities (e.g. over 3 hours). You will get
+"too many 408 error responses" here and "This file is too large to export to GPX" when you try to
+download from the web.
+If it is just one activity or so, you can work around it with a couple of manual steps:
+- download FIT file instead of GPX
+- use some online converter to produce the GPX file, store it in data/gpx. Follow proper naming
+- add the activity to data/activities_list.csv manually. Follow proper formatting
+- use the utility mode to regenerate coordinates, adjust code just for this activity id. Search for
+    REGENERATE_COORDINATES
+- revert everything to BAU
 
 ## Links
 
@@ -107,6 +118,8 @@ on the [Leaflet JS](https://leafletjs.com) library.
 
 ## Ideas, todos
 
+* it seems, map tiles are loaded for all the maps for the initial view (rather than just for the selected map). Consequent zooming and
+  * panning works as expected. Could save a couple of MB when loading the page if fixed
 * add command line parameters to override config to allow for scheduling of automatic run
 * resolve Closure warnings
 * find all activities in a selection rectangle

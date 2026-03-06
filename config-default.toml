@@ -7,10 +7,10 @@
 downloader = "ON"
 # Generate map from activities? Supported values: ON and OFF
 map-creator = "ON"
-# Add date range filter to the generated map? WIP - Minifier not yet supported when date-filter enabled. Supported values: ON and OFF
-date-filter = "OFF"
-# Minify generated map? Supported values: ON and OFF
-minifier = "ON"
+# Add date range filter to the generated map? Supported values: ON and OFF
+date-filter = "ON"
+# Minify generated map? WIP - Minifier not yet supported when date-filter enabled. Supported values: ON and OFF
+minifier = "OFF"
 # Upload the map to an FTP site? Supported values: ON and OFF
 uploader = "ON"
 # Utility operations. To be used in exceptional cases when you do code changes or manual data changes. Supported values:
@@ -72,14 +72,15 @@ mapping = [
     { name = "Running", color = "magenta", type_keys = ["running", "track_running", "trail_running"] },
     { name = "Inline", color = "dodgerblue", type_keys = ["inline_skating"] },
     { name = "Skiing", color = "red", type_keys = ["resort_skiing", "resort_snowboarding", "resort_skiing_snowboarding_ws"] },
-    { name = "Crosscountry", color = "blueviolet", type_keys = ["skate_skiing_ws", "cross_country_skiing_ws", "backcountry_skiing"] },
+    { name = "Crosscountry", color = "blueviolet", type_keys = ["skate_skiing_ws", "cross_country_skiing_ws"] },
+    { name = "Skimo", color = "orange", type_keys = ["backcountry_skiing"] },
     { name = "Hiking", color = "brown", type_keys = ["hiking", "walking"] },
     { name = "Cycling", color = "deeppink", type_keys = ["cycling", "mountain_biking", "gravel_cycling"] }
 ]
 # Define which categories are displayed when you open the page. Activities from other categories will not be displayed by default but
 # user can easily toggle categories on and off.
 display-mapping-on-load = [
-    "Other", "Running", "Inline", "Skiing", "Crosscountry", "Hiking", "Cycling"
+    "Other", "Running", "Inline", "Skiing", "Crosscountry", "Skimo", "Hiking", "Cycling"
 ]
 # It is not necessary to use all the full GPS coordinates. They are large and the level of detail is not needed for purposes of the map.
 # Therefore, using simplification utility to minimize size of the coordinates collection while still keeping almost the same shape of the

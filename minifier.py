@@ -5,6 +5,12 @@ import subprocess
 
 from common import logger
 
+# Update June 2025 - not using this feature anymore
+# Browser compression does a good job and makes minification not that beneficial.
+#   - 14.70 MB original size (100.0%)
+#   -  2.04 MB transfer size ( 13.8%)
+#   -  8.69 MB minified size ( 59.0%)
+#   -  1.70 MB minified transfer size (11.6 %)
 
 # This part of code is not required for functionality, it only helps to reduce size of the output.
 # At the same time it is the least robust part of the code and has high potential to break in the future.
