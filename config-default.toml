@@ -122,6 +122,6 @@ directory-token-store = '.auth/'
 # #####################################################################
 [output]
 # Where to store the result
-map-filename = 'data/activities_map.html'
+map-filename = 'output/activities_map.html'
 # Where to store the result after Javascript minification
-map-minified-filename = 'data/activities_map.min.html'
+map-minified-filename = 'output/activities_map.min.html'

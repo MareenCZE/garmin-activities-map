@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- This template contains the JavaScript for activity loading -->
+</head>
+<body>
+<script>
+// Activity loader script: Core functions and initialization
+let activityData = {};
+let manifest = null;
+let dateSlider = null;
+let currentDateRange = null;
+let mapInstance = null;
+
+// name -> L.FeatureGroup (or other overlay layer)
+let layerGroups = {};
+
+// Leaflet internal layer id -> category name
+let layerIdToCategory = {};
+
+function parseDate(dateString) {
+    if (!dateString) return null;
+    let date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+        const parts = dateString.split('-');
+        if (parts.length === 3) {
+            date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        }
+    }
+    return isNaN(date.getTime()) ? null : date;
+}
+
+function waitForMap() {
+    return new Promise((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 100; // 10 seconds max
+
+        const checkMap = () => {
+            attempts++;
+            console.log(`Checking for map... attempt ${attempts}`);
+
+            if (typeof {{MAP_VAR_NAME}} !== 'undefined' && {{MAP_VAR_NAME}}) {
+                mapInstance = {{MAP_VAR_NAME}};
+                console.log('Map found!', mapInstance);
+                resolve(mapInstance);
+            } else if (attempts >= maxAttempts) {
+                console.error('Map not found after maximum attempts');
+                resolve(null);
+            } else {
+                setTimeout(checkMap, 100);
+            }
+        };
+        checkMap();
+    });
+}
+
+/**
+ * We still wait for the layer control DOM because it indicates Folium finished wiring things up.
+ * But we do NOT use DOM order or window enumeration to map layers anymore.
+ */
+function waitForLayerControl() {
+    return new Promise((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 200; // 40 seconds max
+
+        const check = () => {
+            attempts++;
+            console.log(`Checking for layer control... attempt ${attempts}`);
+
+            if (!mapInstance || !mapInstance._controlContainer) {
+                if (attempts >= maxAttempts) {
+                    console.error('Layer control container not found after maximum attempts');
+                    return resolve(null);
+                }
+                return setTimeout(check, 200);
+            }
+
+            const controlEl = mapInstance._controlContainer.querySelector('.leaflet-control-layers');
+            if (!controlEl) {
+                if (attempts >= maxAttempts) {
+                    console.error('Layer control DOM element not found after maximum attempts');
+                    return resolve(null);
+                }
+                console.log('Layer control DOM not ready yet, waiting...');
+                return setTimeout(check, 200);
+            }
+
+            const overlayLabels = controlEl.querySelectorAll('.leaflet-control-layers-overlays label');
+            if (!overlayLabels || overlayLabels.length === 0) {
+                if (attempts >= maxAttempts) {
+                    console.error('Layer control overlay labels not found after maximum attempts');
+                    return resolve(null);
+                }
+                console.log('Layer control overlays not populated yet, waiting...');
+                return setTimeout(check, 200);
+            }
+
+            const overlayNames = Array.from(overlayLabels)
+                .map(l => (l.textContent || '').trim())
+                .filter(Boolean);
+
+            console.log(`Layer control overlays detected: ${overlayNames.length}`, overlayNames);
+            resolve({ controlEl, overlayNames });
+        };
+
+        check();
+    });
+}
+
+function rebuildLayerIdIndex() {
+    layerIdToCategory = {};
+    for (const [categoryName, layer] of Object.entries(layerGroups)) {
+        if (!layer) continue;
+        const id = layer._leaflet_id;
+        if (id == null) continue;
+        layerIdToCategory[id] = categoryName;
+    }
+    console.log('Built layerIdToCategory index:', layerIdToCategory);
+}
+
+function getCategoryNameFromEvent(e) {
+    // Leaflet overlay events pass the layer object
+    if (e && e.layer && e.layer._leaflet_id != null) {
+        const fromId = layerIdToCategory[e.layer._leaflet_id];
+        if (fromId) return fromId;
+    }
+
+    // Fallback: reverse lookup by identity
+    if (e && e.layer) {
+        for (const [name, layer] of Object.entries(layerGroups)) {
+            if (layer === e.layer) return name;
+        }
+    }
+    return null;
+}
+
+/**
+ * Robust: Extract overlays mapping directly from the Leaflet control layers call that Folium emits.
+ *
+ * Folium typically generates something like:
+ *   var layer_control_xxx = L.control.layers(base_layers_xxx, overlays_xxx, {...}).addTo(map_xxx);
+ *
+ * We parse the JS to find overlays_xxx and then read window[overlays_xxx], which is an object:
+ *   { "Running": feature_group_abc, "Cycling": feature_group_def, ... }
+ */
+function getOverlaysObjectFromFoliumHtml() {
+    // Search script tags for a line containing L.control.layers( ... )
+    const scripts = Array.from(document.querySelectorAll('script'));
+    for (const s of scripts) {
+        const txt = s.textContent || '';
+        if (!txt.includes('L.control.layers')) continue;
+
+        // Try to capture: L.control.layers(<baseVar>, <overlayVar>, ...)
+        // We allow whitespace and newlines.
+        const re = /L\.control\.layers\(\s*([A-Za-z0-9_$.]+)\s*,\s*([A-Za-z0-9_$.]+)\s*,/m;
+        const m = txt.match(re);
+        if (m && m[2]) {
+            const overlaysVarExpr = m[2]; // usually a simple var name like overlays_xxx
+            // Resolve it from window if possible
+            let overlaysObj = null;
+            try {
+                overlaysObj = overlaysVarExpr.split('.').reduce((acc, key) => acc && acc[key], window);
+            } catch (_) {
+                overlaysObj = null;
+            }
+            if (overlaysObj && typeof overlaysObj === 'object') {
+                console.log('Found overlays object via', overlaysVarExpr, overlaysObj);
+                return overlaysObj;
+            }
+        }
+    }
+    console.warn('Could not locate overlays object in Folium-generated scripts.');
+    return null;
+}
+
+/**
+ * Build layerGroups from the overlays object (name -> layer) emitted by Folium.
+ * This eliminates ordering issues entirely.
+ */
+function extractLayersFromFoliumOverlays(layerControlInfo) {
+    console.log('Extracting layers from Folium overlays object...');
+    layerGroups = {};
+    layerIdToCategory = {};
+
+    const expectedCategories = manifest ? Object.keys(manifest.categories) : [];
+    console.log('Expected categories:', expectedCategories);
+
+    const overlaysObj = getOverlaysObjectFromFoliumHtml();
+    if (!overlaysObj) {
+        console.error('Overlays object not found; cannot map layers robustly.');
+        return false;
+    }
+
+    // overlaysObj may contain more overlays than we care about; filter to manifest categories.
+    for (const [name, layer] of Object.entries(overlaysObj)) {
+        if (!expectedCategories.includes(name)) continue;
+        layerGroups[name] = layer;
+    }
+
+    const mapped = Object.keys(layerGroups);
+    console.log('Mapped overlays from Folium:', mapped);
+
+    const missing = expectedCategories.filter(n => !layerGroups[n]);
+    if (missing.length) {
+        console.warn('These expected categories were not found in Folium overlays object:', missing);
+        // Still proceed; user can diagnose mismatch in config vs layer names
+    }
+
+    rebuildLayerIdIndex();
+
+    // Optional cross-check with DOM labels
+    if (layerControlInfo && Array.isArray(layerControlInfo.overlayNames)) {
+        const inDom = layerControlInfo.overlayNames.filter(n => expectedCategories.includes(n));
+        const domMissing = inDom.filter(n => !layerGroups[n]);
+        if (domMissing.length) {
+            console.warn('Categories present in layer control DOM but missing from overlays mapping:', domMissing);
+        }
+    }
+
+    return mapped.length > 0;
+}
+
+function createActivityPopupHtml(activity, garminConnectUrl) {
+    const durationMinutes = Math.floor(activity.duration);
+    const hours = Math.floor(durationMinutes / 60);
+    const minutes = durationMinutes % 60;
+    const durationFormatted = hours > 0 ? `${hours}h ${minutes}min` : `${minutes}min`;
+
+    const activityLink = garminConnectUrl
+        ? `<a href="${garminConnectUrl}${activity.activity_id}" target="_blank" style="color: #007cba; text-decoration: none;">${activity.activity_id}</a>`
+        : activity.activity_id;
+
+    return `
+    <div style="font-family: Arial, sans-serif; font-size: 12px; line-height: 1.4; max-width: 250px;">
+        <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; color: #333;">
+            ${activity.name}
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="font-weight: bold;">Date:</span> ${activity.date}
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="font-weight: bold;">Type:</span> ${activity.activity_type}
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="font-weight: bold;">Distance:</span> ${activity.distance} km
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="font-weight: bold;">Duration:</span> ${durationFormatted}
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="font-weight: bold;">Activity ID:</span> ${activityLink}
+        </div>
+    </div>
+    `;
+}
+
+function findLayerByName(layerName) {
+    const layer = layerGroups[layerName];
+    if (!layer) {
+        console.error(`Layer '${layerName}' not found. Available layers:`, Object.keys(layerGroups));
+    }
+    return layer;
+}
+
+async function loadManifest() {
+    try {
+        console.log('Loading manifest...');
+        const response = await fetch('data/manifest.json');
+        manifest = await response.json();
+        console.log('Loaded manifest:', manifest);
+
+        console.log('Waiting for map...');
+        await waitForMap();
+        if (!mapInstance) {
+            console.error('Failed to get map instance');
+            return;
+        }
+        console.log('Map is available');
+
+        console.log('Waiting for layer control...');
+        const layerControlInfo = await waitForLayerControl();
+        if (!layerControlInfo) {
+            console.error('Failed to get layer control');
+            return;
+        }
+        console.log('Layer control is available');
+
+        const foundLayers = extractLayersFromFoliumOverlays(layerControlInfo);
+        if (!foundLayers) {
+            console.error('No matching layers found. Cannot load activities.');
+            return;
+        }
+
+        for (const [categoryName, categoryInfo] of Object.entries(manifest.categories)) {
+            if (categoryInfo.show_on_load && categoryInfo.activity_count > 0) {
+                await loadCategoryData(categoryName, categoryInfo);
+            }
+        }
+
+        setupMapEventListeners();
+        initializeDateRangeSlider();
+    } catch (error) {
+        console.error('Error loading manifest:', error);
+    }
+}
+
+async function loadCategoryData(categoryName, categoryInfo) {
+    if (activityData[categoryName]) {
+        console.log(`Data for ${categoryName} already loaded`);
+        return;
+    }
+
+    try {
+        console.log(`Loading data for category: ${categoryName}`);
+        const response = await fetch(categoryInfo.data_file);
+        const activities = await response.json();
+
+        activityData[categoryName] = activities;
+        console.log(`Loaded ${activities.length} activities for ${categoryName}`);
+        addActivitiesToMap(categoryName, activities);
+    } catch (error) {
+        console.error(`Error loading data for ${categoryName}:`, error);
+    }
+}
+
+function addActivitiesToMap(categoryName, activities) {
+    if (!mapInstance) {
+        console.error('Map instance not available for adding activities');
+        return;
+    }
+
+    const layer = findLayerByName(categoryName);
+    if (!layer) {
+        console.error(`Could not find layer for category: ${categoryName}`);
+        return;
+    }
+
+    console.log(`Adding ${activities.length} activities to layer: ${categoryName}`);
+    layer.clearLayers();
+
+    let addedCount = 0;
+    activities.forEach(function(activity) {
+        if (activity.coordinates && activity.coordinates.length > 0) {
+            const polyline = L.polyline(activity.coordinates, {
+                color: activity.color,
+                weight: 2,
+                opacity: 0.8
+            });
+
+            const garminConnectUrl = manifest.config && manifest.config.garmin_connect_url
+                ? manifest.config.garmin_connect_url
+                : null;
+
+            polyline.bindPopup(createActivityPopupHtml(activity, garminConnectUrl));
+
+            if (manifest.config && manifest.config.enable_highlighting) {
+                polyline.on('mouseover', function() { this.setStyle({weight: 4, opacity: 1}); });
+                polyline.on('mouseout', function() { this.setStyle({weight: 2, opacity: 0.8}); });
+            }
+
+            polyline.activityDate = activity.date;
+            polyline.activityData = activity;
+
+            layer.addLayer(polyline);
+            addedCount++;
+        }
+    });
+
+    console.log(`Added ${addedCount} activities to map for ${categoryName}`);
+}
+
+function setupMapEventListeners() {
+    if (!mapInstance) {
+        console.error('Map instance not available for event listeners');
+        return;
+    }
+
+    console.log('Setting up map event listeners');
+
+    mapInstance.on('overlayadd', async function(e) {
+        const categoryName = getCategoryNameFromEvent(e);
+
+        console.log('Overlay added:', {
+            resolvedCategory: categoryName,
+            eventNameField: e && Object.prototype.hasOwnProperty.call(e, 'name') ? e.name : undefined,
+            leafletLayerId: e && e.layer ? e.layer._leaflet_id : undefined
+        });
+
+        if (!categoryName) return;
+
+        const categoryInfo = manifest.categories[categoryName];
+        if (categoryInfo && categoryInfo.activity_count > 0 && !activityData[categoryName]) {
+            await loadCategoryData(categoryName, categoryInfo);
+        }
+    });
+
+    mapInstance.on('overlayremove', function(e) {
+        const categoryName = getCategoryNameFromEvent(e);
+
+        console.log('Overlay removed:', {
+            resolvedCategory: categoryName,
+            eventNameField: e && Object.prototype.hasOwnProperty.call(e, 'name') ? e.name : undefined,
+            leafletLayerId: e && e.layer ? e.layer._leaflet_id : undefined
+        });
+    });
+}
+
+function filterActivitiesByDateRange() {
+    if (!currentDateRange || !mapInstance) {
+        console.log('Cannot filter activities: missing date range or map instance');
+        return;
+    }
+
+    console.log('Filtering activities by date range:', currentDateRange);
+
+    for (const [categoryName, activities] of Object.entries(activityData)) {
+        const layer = findLayerByName(categoryName);
+        if (!layer) continue;
+
+        layer.clearLayers();
+
+        let addedCount = 0;
+        activities.forEach(function(activity) {
+            if (!activity.coordinates || activity.coordinates.length === 0) return;
+
+            const inRange = activity.date >= currentDateRange.start && activity.date <= currentDateRange.end;
+            if (!inRange) return;
+
+            const polyline = L.polyline(activity.coordinates, {
+                color: activity.color,
+                weight: 2,
+                opacity: 0.8
+            });
+
+            const garminConnectUrl = manifest.config && manifest.config.garmin_connect_url
+                ? manifest.config.garmin_connect_url
+                : null;
+
+            polyline.bindPopup(createActivityPopupHtml(activity, garminConnectUrl));
+
+            if (manifest.config && manifest.config.enable_highlighting) {
+                polyline.on('mouseover', function() { this.setStyle({weight: 4, opacity: 1}); });
+                polyline.on('mouseout', function() { this.setStyle({weight: 2, opacity: 0.8}); });
+            }
+
+            polyline.activityDate = activity.date;
+            polyline.activityData = activity;
+
+            layer.addLayer(polyline);
+            addedCount++;
+        });
+
+        console.log(`Added ${addedCount} filtered activities to map for ${categoryName}`);
+    }
+}
+
+function initializeDateRangeSlider() {
+    if (!manifest.date_range) {
+        console.log('No date range in manifest, skipping slider initialization');
+        return;
+    }
+
+    const minDate = parseDate(manifest.date_range.min_date);
+    const maxDate = parseDate(manifest.date_range.max_date);
+
+    if (!minDate || !maxDate) {
+        console.error('Invalid dates for slider initialization');
+        return;
+    }
+
+    console.log('Initializing date range slider:', minDate, 'to', maxDate);
+
+    const existing = document.getElementById('date-range-slider-container');
+    if (existing) existing.remove();
+
+    // Slightly larger handles (but still compact) + keep them inside panel
+    if (!document.getElementById('date-range-slider-style')) {
+        const style = document.createElement('style');
+        style.id = 'date-range-slider-style';
+        style.textContent = `
+            #date-range-slider-container .noUi-horizontal {
+                height: 10px;
+            }
+            #date-range-slider-container .noUi-target,
+            #date-range-slider-container .noUi-connect {
+                border-radius: 8px;
+            }
+            #date-range-slider-container .noUi-handle {
+                width: 18px;
+                height: 18px;
+                right: -9px; /* half width */
+                top: -4px;   /* centers 18px handle on 10px track */
+                border-radius: 50%;
+                box-sizing: border-box;
+            }
+            #date-range-slider-container .noUi-handle:before,
+            #date-range-slider-container .noUi-handle:after {
+                display: none;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    const sliderContainer = document.createElement('div');
+    sliderContainer.id = 'date-range-slider-container';
+    sliderContainer.style.cssText = `
+        position: absolute;
+        top: 10px;
+        left: 140px;
+        right: 10px;
+        z-index: 1000;
+
+        background: rgba(255, 255, 255, 0.55);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+
+        padding: 8px 10px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+
+        line-height: 1.1;
+        overflow: hidden;
+    `;
+
+    // Inner padding ensures handles at min/max stay inside the rounded panel
+    sliderContainer.innerHTML = `
+        <div style="padding: 0 12px;">
+            <div id="date-range-slider" style="margin: 6px 0 6px 0;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: rgba(0,0,0,0.75);">
+            <span id="date-range-start">${minDate.toLocaleDateString()}</span>
+            <span id="date-range-end">${maxDate.toLocaleDateString()}</span>
+        </div>
+    `;
+    document.body.appendChild(sliderContainer);
+
+    const slider = document.getElementById('date-range-slider');
+
+    try {
+        const minTimestamp = minDate.getTime();
+        const maxTimestamp = maxDate.getTime();
+
+        noUiSlider.create(slider, {
+            start: [minTimestamp, maxTimestamp],
+            connect: true,
+            range: { min: minTimestamp, max: maxTimestamp }
+        });
+
+        slider.noUiSlider.on('update', function(values) {
+            try {
+                const startDate = new Date(parseFloat(values[0]));
+                const endDate = new Date(parseFloat(values[1]));
+
+                if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+                    document.getElementById('date-range-start').textContent = startDate.toLocaleDateString();
+                    document.getElementById('date-range-end').textContent = endDate.toLocaleDateString();
+
+                    const newDateRange = {
+                        start: startDate.toISOString().split('T')[0],
+                        end: endDate.toISOString().split('T')[0]
+                    };
+
+                    if (!currentDateRange ||
+                        currentDateRange.start !== newDateRange.start ||
+                        currentDateRange.end !== newDateRange.end) {
+                        currentDateRange = newDateRange;
+                        console.log('Date range updated:', currentDateRange);
+                        filterActivitiesByDateRange();
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating date range:', error);
+            }
+        });
+
+        dateSlider = slider;
+        console.log('Date range slider initialized successfully');
+    } catch (error) {
+        console.error('Error creating date range slider:', error);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, starting activity loader...');
+    setTimeout(loadManifest, 2000);
+});
+</script>
+</body>
+</html>

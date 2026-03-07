@@ -36,7 +36,9 @@ if config_mode["minifier"] == "ON":
 
 if config_mode["uploader"] == "ON":
     filename = output_map_minified_filename if config_mode["minifier"] == "ON" else output_map_filename
-    ftpuploader.upload_file_to_ftp(filename)
+
+    # Use the new upload function that handles HTML + JSON data files
+    ftpuploader.upload_map_with_data_to_ftp_incremental(filename)
 
 utility_mode = config_mode["utility-mode"]
 if utility_mode != "OFF":
