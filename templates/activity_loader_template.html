@@ -299,6 +299,8 @@ async function loadManifest() {
 
         setupMapEventListeners();
         initializeDateRangeSlider();
+        initializeToggleControl();
+
     } catch (error) {
         console.error('Error loading manifest:', error);
     }
@@ -594,6 +596,72 @@ function initializeDateRangeSlider() {
         console.log('Date range slider initialized successfully');
     } catch (error) {
         console.error('Error creating date range slider:', error);
+    }
+}
+
+function initializeToggleControl() {
+    if (!mapInstance) return;
+
+    // Create a custom control
+    const ToggleControl = L.Control.extend({
+        options: {
+            position: 'topleft'
+        },
+
+        onAdd: function(map) {
+            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+            const button = L.DomUtil.create('a', 'leaflet-control-toggle-menu', container);
+            button.href = '#';
+            button.title = 'Toggle Controls';
+            button.role = 'button';
+            button.innerHTML = '<span style="font-size: 18px; line-height: 30px;">&#9776;</span>'; // Hamburger
+
+            button.style.width = '30px';
+            button.style.height = '30px';
+            button.style.textAlign = 'center';
+            button.style.display = 'block';
+            button.style.backgroundColor = 'white';
+            button.style.cursor = 'pointer';
+            button.style.textDecoration = 'none';
+            button.style.color = 'black';
+
+            button.onclick = function(e) {
+                L.DomEvent.stop(e);
+                toggleMapControls();
+            };
+
+            return container;
+        }
+    });
+
+    const toggleControl = new ToggleControl();
+    mapInstance.addControl(toggleControl);
+
+    // Move it to the top of the stack in the top-left corner
+    const controlContainer = toggleControl.getContainer();
+    const corner = controlContainer.parentElement; // .leaflet-top.leaflet-left
+    if (corner) {
+        corner.prepend(controlContainer);
+    }
+}
+
+function toggleMapControls() {
+    // Toggle Leaflet Zoom Control
+    const zoomControl = document.querySelector('.leaflet-control-zoom');
+    if (zoomControl) {
+        zoomControl.style.display = (zoomControl.style.display === 'none') ? '' : 'none';
+    }
+
+    // Toggle Leaflet Layer Control
+    const layerControl = document.querySelector('.leaflet-control-layers');
+    if (layerControl) {
+        layerControl.style.display = (layerControl.style.display === 'none') ? '' : 'none';
+    }
+
+    // Toggle Date Range Slider
+    const sliderContainer = document.getElementById('date-range-slider-container');
+    if (sliderContainer) {
+        sliderContainer.style.display = (sliderContainer.style.display === 'none') ? '' : 'none';
     }
 }
 
