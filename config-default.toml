@@ -7,10 +7,6 @@
 downloader = "ON"
 # Generate map from activities? Supported values: ON and OFF
 map-creator = "ON"
-# Add date range filter to the generated map? Supported values: ON and OFF
-date-filter = "ON"
-# Minify generated map? WIP - Minifier not yet supported when date-filter enabled. Supported values: ON and OFF
-minifier = "OFF"
 # Upload the map to an FTP site? Supported values: ON and OFF
 uploader = "ON"
 # Utility operations. To be used in exceptional cases when you do code changes or manual data changes. Supported values:

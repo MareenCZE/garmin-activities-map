@@ -68,7 +68,6 @@ The tool is broken down into a couple of files which represent sort of isolated 
 * downloader.py - downloads data from Garmin Connect, reprocesses GPS coordinates of activities
 * storage.py - manages local storage of activities data
 * mapgenerator.py - creates a map and puts activities on it
-* minifier.py - reduces size of the map (code created by mapgenerator is repetitive and verbose)
 * ftpuploader.py - uploads the map to an FTP site
 
 There are two configuration files:
@@ -121,6 +120,5 @@ If it is just one activity or so, you can work around it with a couple of manual
 * it seems, map tiles are loaded for all the maps for the initial view (rather than just for the selected map). Consequent zooming and
   * panning works as expected. Could save a couple of MB when loading the page if fixed
 * add command line parameters to override config to allow for scheduling of automatic run
-* resolve Closure warnings
 * find all activities in a selection rectangle
 * put it online - hosting with python and storage

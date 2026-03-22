@@ -2,7 +2,6 @@
 import os.path
 
 import downloader
-import minifier
 import storage
 from common import logger, config
 import ftpuploader
@@ -14,7 +13,6 @@ import mapgenerator
 # ##########################################################
 
 output_map_filename = config["output"]["map-filename"]
-output_map_minified_filename = config["output"]["map-minified-filename"]
 config_mode = config["mode"]
 
 if config_mode["downloader"] == "ON":
@@ -25,20 +23,11 @@ if config_mode["map-creator"] == "ON":
     logger.info(f"Loaded {len(activities)} activities")
 
     mapgenerator.create_map_with_activities(activities, output_map_filename)
-    if config_mode["date-filter"] == "ON":
-        mapgenerator.add_date_range_filter(output_map_filename)
     logger.info(f"Generated {output_map_filename}. Size: {round(os.path.getsize(output_map_filename) / 1048576, 2)} MB")
 
-if config_mode["minifier"] == "ON":
-    minifier.minify(output_map_filename, output_map_minified_filename)
-    logger.info(
-        f"Minified output saved into {output_map_minified_filename}. Size: {round(os.path.getsize(output_map_minified_filename) / 1048576, 2)} MB")
-
 if config_mode["uploader"] == "ON":
-    filename = output_map_minified_filename if config_mode["minifier"] == "ON" else output_map_filename
-
     # Use the new upload function that handles HTML + JSON data files
-    ftpuploader.upload_map_with_data_to_ftp_incremental(filename)
+    ftpuploader.upload_map_with_data_to_ftp_incremental(output_map_filename)
 
 utility_mode = config_mode["utility-mode"]
 if utility_mode != "OFF":
