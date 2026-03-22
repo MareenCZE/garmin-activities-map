@@ -323,6 +323,61 @@ async function loadCategoryData(categoryName, categoryInfo) {
     }
 }
 
+function createPolylineForActivity(activity) {
+    if (!activity.coordinates || activity.coordinates.length === 0) return null;
+
+    const normalStyle = {
+        color: activity.color,
+        weight: 2,
+        opacity: 0.8
+    };
+
+    const highlightStyle = {
+        color: '#00FF00', // Shiny saturated green
+        weight: 5,
+        opacity: 1.0
+    };
+
+    const polyline = L.polyline(activity.coordinates, normalStyle);
+
+    const garminConnectUrl = manifest.config && manifest.config.garmin_connect_url
+        ? manifest.config.garmin_connect_url
+        : null;
+
+    polyline.bindPopup(createActivityPopupHtml(activity, garminConnectUrl));
+
+    if (manifest.config && manifest.config.enable_highlighting) {
+        polyline.on('mouseover', function() {
+            this.setStyle(highlightStyle);
+            this.bringToFront();
+        });
+
+        polyline.on('mouseout', function() {
+            const popup = this.getPopup();
+            // Check if popup is open. fallback to map check if isOpen not available
+            const isOpen = popup && (popup.isOpen ? popup.isOpen() : (this._map && this._map.hasLayer(popup)));
+
+            if (!isOpen) {
+                this.setStyle(normalStyle);
+            }
+        });
+
+        polyline.on('popupopen', function() {
+            this.setStyle(highlightStyle);
+            this.bringToFront();
+        });
+
+        polyline.on('popupclose', function() {
+            this.setStyle(normalStyle);
+        });
+    }
+
+    polyline.activityDate = activity.date;
+    polyline.activityData = activity;
+
+    return polyline;
+}
+
 function addActivitiesToMap(categoryName, activities) {
     if (!mapInstance) {
         console.error('Map instance not available for adding activities');
@@ -340,27 +395,8 @@ function addActivitiesToMap(categoryName, activities) {
 
     let addedCount = 0;
     activities.forEach(function(activity) {
-        if (activity.coordinates && activity.coordinates.length > 0) {
-            const polyline = L.polyline(activity.coordinates, {
-                color: activity.color,
-                weight: 2,
-                opacity: 0.8
-            });
-
-            const garminConnectUrl = manifest.config && manifest.config.garmin_connect_url
-                ? manifest.config.garmin_connect_url
-                : null;
-
-            polyline.bindPopup(createActivityPopupHtml(activity, garminConnectUrl));
-
-            if (manifest.config && manifest.config.enable_highlighting) {
-                polyline.on('mouseover', function() { this.setStyle({weight: 4, opacity: 1}); });
-                polyline.on('mouseout', function() { this.setStyle({weight: 2, opacity: 0.8}); });
-            }
-
-            polyline.activityDate = activity.date;
-            polyline.activityData = activity;
-
+        const polyline = createPolylineForActivity(activity);
+        if (polyline) {
             layer.addLayer(polyline);
             addedCount++;
         }
@@ -421,33 +457,14 @@ function filterActivitiesByDateRange() {
 
         let addedCount = 0;
         activities.forEach(function(activity) {
-            if (!activity.coordinates || activity.coordinates.length === 0) return;
-
             const inRange = activity.date >= currentDateRange.start && activity.date <= currentDateRange.end;
             if (!inRange) return;
 
-            const polyline = L.polyline(activity.coordinates, {
-                color: activity.color,
-                weight: 2,
-                opacity: 0.8
-            });
-
-            const garminConnectUrl = manifest.config && manifest.config.garmin_connect_url
-                ? manifest.config.garmin_connect_url
-                : null;
-
-            polyline.bindPopup(createActivityPopupHtml(activity, garminConnectUrl));
-
-            if (manifest.config && manifest.config.enable_highlighting) {
-                polyline.on('mouseover', function() { this.setStyle({weight: 4, opacity: 1}); });
-                polyline.on('mouseout', function() { this.setStyle({weight: 2, opacity: 0.8}); });
+            const polyline = createPolylineForActivity(activity);
+            if (polyline) {
+                layer.addLayer(polyline);
+                addedCount++;
             }
-
-            polyline.activityDate = activity.date;
-            polyline.activityData = activity;
-
-            layer.addLayer(polyline);
-            addedCount++;
         });
 
         console.log(`Added ${addedCount} filtered activities to map for ${categoryName}`);

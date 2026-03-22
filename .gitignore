@@ -1,6 +1,7 @@
 .auth/
 .idea/
 data/
+output/
 __pycache__/
 /closure-compiler-v20240317.jar
 /config-local.toml
