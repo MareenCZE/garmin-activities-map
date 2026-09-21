@@ -75,6 +75,19 @@ def calculate_map_center(activities):
     return [total_lat / count, total_lon / count]
 
 
+def resolve_map_center(activities):
+    """Pick the map's opening center.
+
+    Uses the [map-tiles].center-point override from config when set (a
+    [latitude, longitude] pair), otherwise falls back to the calculated
+    average of all activities.
+    """
+    configured_center = config['map-tiles'].get('center-point')
+    if configured_center:
+        return configured_center
+    return calculate_map_center(activities)
+
+
 def create_map(center):
     """Create a Folium map with the tile layers configured in [map-tiles].tiles."""
     activities_map = folium.Map(
@@ -155,51 +168,6 @@ def _mapy_cz_variant(tile_key):
     if 'outdoor' in tile_key:
         return 'outdoor'
     return 'basic'  # 'mapy.cz-base', bare 'mapy.cz', or any unrecognized suffix
-
-
-def create_activity_popup_html(activity):
-    """Create HTML content for activity popup with clickable Activity ID link and readable duration"""
-
-    # Get Garmin Connect base URL from config
-    garmin_base_url = config.get('garmin-connect-activity-url', 'https://connect.garmin.com/modern/activity/')
-
-    # Create clickable link for Activity ID
-    activity_link = f'<a href="{garmin_base_url}{activity.activity_id}" target="_blank" style="color: #007cba; text-decoration: none;">{activity.activity_id}</a>'
-
-    # Format duration as "Xh Ymin"
-    duration_minutes = int(activity.duration)
-    hours = duration_minutes // 60
-    minutes = duration_minutes % 60
-
-    if hours > 0:
-        duration_formatted = f"{hours}h {minutes}min"
-    else:
-        duration_formatted = f"{minutes}min"
-
-    popup_html = f"""
-    <div style="font-family: Arial, sans-serif; font-size: 12px; line-height: 1.4; max-width: 250px;">
-        <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; color: #333;">
-            {activity.name}
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Date:</span> {activity.date}
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Type:</span> {activity.activity_type}
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Distance:</span> {activity.distance} km
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Duration:</span> {duration_formatted}
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Activity ID:</span> {activity_link}
-        </div>
-    </div>
-    """
-
-    return popup_html
 
 
 def create_activity_data_files(activities, output_dir):
@@ -368,7 +336,7 @@ def create_map_with_activities(activities, filename):
     manifest = create_activity_data_files(activities, output_dir)
 
     # Create basic map without activities
-    center = calculate_map_center(activities)
+    center = resolve_map_center(activities)
     activities_map = create_map(center)
 
     # Add empty feature groups for ALL categories (not just ones with activities)

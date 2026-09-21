@@ -53,7 +53,7 @@ locally in .auth directory and will work for a year
 
 * Adjust mode values in config-local.toml to reflect what you want to do
 * Run activities-map.py
-* Open the output `data/activities_map.html` or from your FTP site in your browser
+* Open the output `output/activities_map.html` or from your FTP site in your browser
 * Next time only new activities will be downloaded and whole map will be regenerated
 
 

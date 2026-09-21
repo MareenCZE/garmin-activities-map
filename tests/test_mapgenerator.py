@@ -66,27 +66,22 @@ class TestCalculateMapCenter:
         assert mapgenerator.calculate_map_center([a]) == [0, 0]
 
 
-class TestPopupHtml:
-    def test_contains_key_fields_and_link(self, storage_env, config):
-        config["garmin-connect-activity-url"] = "https://connect.garmin.com/modern/activity/"
-        a = make_activity(storage, activity_id=555, name="Trail", date="2024-05-01",
-                          distance=12.3, duration=90, activity_type="trail_running")
-        html = mapgenerator.create_activity_popup_html(a)
-        assert "Trail" in html
-        assert "2024-05-01" in html
-        assert "12.3 km" in html
-        assert "trail_running" in html
-        assert "https://connect.garmin.com/modern/activity/555" in html
+class TestResolveMapCenter:
+    def test_uses_configured_center_point_when_set(self, storage_env, config):
+        config["map-tiles"]["center-point"] = [50.0755, 14.4378]
+        a = make_activity(storage, filename="a")
+        a.coordinates = [[48.0, 16.0]]  # would otherwise average to here
+        assert mapgenerator.resolve_map_center([a]) == [50.0755, 14.4378]
 
-    def test_duration_formatting_with_hours(self, storage_env):
-        a = make_activity(storage, duration=90)  # 1h 30min
-        assert "1h 30min" in mapgenerator.create_activity_popup_html(a)
+    def test_falls_back_to_calculated_center_when_empty(self, storage_env, config):
+        config["map-tiles"]["center-point"] = []
+        a = make_activity(storage, filename="a")
+        a.coordinates = [[48.0, 16.0]]
+        assert mapgenerator.resolve_map_center([a]) == [pytest.approx(48.0), pytest.approx(16.0)]
 
-    def test_duration_formatting_under_an_hour(self, storage_env):
-        a = make_activity(storage, duration=45)
-        html = mapgenerator.create_activity_popup_html(a)
-        assert "45min" in html
-        assert "0h" not in html
+    def test_missing_key_falls_back_to_calculated(self, storage_env, config):
+        config["map-tiles"].pop("center-point", None)
+        assert mapgenerator.resolve_map_center([]) == [0, 0]
 
 
 class TestCreateActivityDataFiles:

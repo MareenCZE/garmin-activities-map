@@ -187,6 +187,9 @@ def regenerate_csv():
 # Download recent activities from GarminConnect to update local state to latest
 def download_new_activities():
     api = init_api()
+    if api is None:
+        logger.error("Garmin Connect login failed - skipping download")
+        return
     download_activities(api)
 
 
@@ -194,4 +197,7 @@ def download_new_activities():
 # - To be used when an older activity is modified in GC
 def redownload_activity(activity_id):
     api = init_api()
+    if api is None:
+        logger.error("Garmin Connect login failed - skipping re-download")
+        return
     reload_activity(api, activity_id)

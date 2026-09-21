@@ -181,3 +181,23 @@ class TestDownloadActivities:
         api = FakeApi([])
         downloader.download_activities(api)
         assert api.requested_range[0] == "2024-03-15"  # last stored date
+
+
+class TestLoginGuard:
+    """download entry points must bail out cleanly when Garmin login fails."""
+
+    def test_download_new_activities_bails_on_failed_login(self, monkeypatch):
+        monkeypatch.setattr(downloader, "init_api", lambda: None)
+        called = []
+        monkeypatch.setattr(downloader, "download_activities",
+                            lambda *a, **k: called.append(True))
+        downloader.download_new_activities()
+        assert called == []  # never attempted the download
+
+    def test_redownload_activity_bails_on_failed_login(self, monkeypatch):
+        monkeypatch.setattr(downloader, "init_api", lambda: None)
+        called = []
+        monkeypatch.setattr(downloader, "reload_activity",
+                            lambda *a, **k: called.append(True))
+        downloader.redownload_activity(12345)
+        assert called == []  # never attempted the reload
