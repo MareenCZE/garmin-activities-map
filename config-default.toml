@@ -41,9 +41,9 @@ remote-filename = "index.html"
 center-point = []
 # Initial zoom of the map. Default is 8.
 zoom-start = 8
-# If you want to use map tiles from Mapy.cz, put your personal API key as an override in config-local.toml.
-# See https://developer.mapy.cz/en/rest-api-mapy-cz/api-key/
-mapy-cz-api-key = ""
+# If you want to use map tiles from Mapy.com (formerly Mapy.cz), put your personal API key as an override in config-local.toml.
+# See https://developer.mapy.com/en/rest-api-mapy-cz/api-key/
+mapy-com-api-key = ""
 # CARTO map tiles (the "Dark" and "Light" backgrounds below) require an API key since 2026. Without a key the tiles are
 # served with an "API KEY REQUIRED" watermark. Put your personal API key as an override in config-local.toml.
 # Get a free key (5 million tile requests / month) at https://carto.com/basemaps/apikey/
@@ -56,8 +56,8 @@ tiles = [
     { tiles='cartodbdark_matter', name="Dark" },
     { tiles='cartodbpositron', name="Light" },
     { tiles='cartodbvoyager', name="Voyager" },
-    { tiles='mapy.cz-winter', name="Mapy.cz Winter" },
-    { tiles='mapy.cz-outdoor', name="Mapy.cz Outdoor" }
+    { tiles='mapy.com-winter', name="Mapy.com Winter" },
+    { tiles='mapy.com-outdoor', name="Mapy.com Outdoor" }
 ]
 
 # #####################################################################

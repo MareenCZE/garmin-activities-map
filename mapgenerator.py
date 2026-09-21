@@ -114,8 +114,8 @@ def build_tile_layer(tile_key, display_name):
     if tile_key in CARTO_TILE_VARIANTS:
         return _carto_tile_layer(tile_key, display_name)
 
-    if tile_key.startswith('mapy.cz'):
-        return _mapy_cz_tile_layer(tile_key, display_name)
+    if tile_key.startswith('mapy.com'):
+        return _mapy_com_tile_layer(tile_key, display_name)
 
     if tile_key == 'OpenStreetMap':
         # Built-in Folium tile source - no attribution needed.
@@ -149,15 +149,15 @@ def _carto_tile_layer(tile_key, display_name):
                             overlay=False, control=True, max_zoom=20)
 
 
-def _mapy_cz_tile_layer(tile_key, display_name):
-    """Build a Mapy.cz layer, or None when no Mapy.cz API key is configured."""
-    api_key = config['map-tiles'].get('mapy-cz-api-key', '')
+def _mapy_com_tile_layer(tile_key, display_name):
+    """Build a Mapy.com layer, or None when no Mapy.com API key is configured."""
+    api_key = config['map-tiles'].get('mapy-com-api-key', '')
     if not api_key:
-        logger.warning(f"Mapy.cz API key not configured, skipping {display_name}")
+        logger.warning(f"Mapy.com API key not configured, skipping {display_name}")
         return None
 
-    variant = _mapy_cz_variant(tile_key)
-    tile_url = f"https://api.mapy.cz/v1/maptiles/{variant}/256/{{z}}/{{x}}/{{y}}?apikey={api_key}"
+    variant = _mapy_com_variant(tile_key)
+    tile_url = f"https://api.mapy.com/v1/maptiles/{variant}/256/{{z}}/{{x}}/{{y}}?apikey={api_key}"
     # Mapy.com requires this exact copyright text with a link. Their logo is a
     # separate visibility requirement handled client-side (initializeMapyAttribution).
     attribution = '© <a href="https://api.mapy.com/copyright">Seznam.cz a.s. and others</a>'
@@ -165,13 +165,13 @@ def _mapy_cz_tile_layer(tile_key, display_name):
                             overlay=False, control=True, max_zoom=18)
 
 
-def _mapy_cz_variant(tile_key):
-    """Map a 'mapy.cz-*' config key to a Mapy.cz v1 tileset name (default 'basic')."""
+def _mapy_com_variant(tile_key):
+    """Map a 'mapy.com-*' config key to a Mapy.com v1 tileset name (default 'basic')."""
     if 'winter' in tile_key:
         return 'winter'
     if 'outdoor' in tile_key:
         return 'outdoor'
-    return 'basic'  # 'mapy.cz-base', bare 'mapy.cz', or any unrecognized suffix
+    return 'basic'  # 'mapy.com-base', bare 'mapy.com', or any unrecognized suffix
 
 
 def create_activity_data_files(activities, output_dir):

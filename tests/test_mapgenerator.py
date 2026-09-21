@@ -184,29 +184,29 @@ class TestBuildTileLayer:
         # falls back to Folium's shorthand: CARTO URL but no explicit key param
         assert "key=" not in layer.tiles
 
-    def test_mapy_cz_with_key_builds_url(self, config):
-        config["map-tiles"]["mapy-cz-api-key"] = "MKEY"
-        layer = mapgenerator.build_tile_layer("mapy.cz-winter", "Winter")
-        assert "api.mapy.cz/v1/maptiles/winter/" in layer.tiles
+    def test_mapy_com_with_key_builds_url(self, config):
+        config["map-tiles"]["mapy-com-api-key"] = "MKEY"
+        layer = mapgenerator.build_tile_layer("mapy.com-winter", "Winter")
+        assert "api.mapy.com/v1/maptiles/winter/" in layer.tiles
         assert "apikey=MKEY" in layer.tiles
         # Mapy.com terms: exact copyright text linked to their copyright page
         attribution = layer.options["attribution"]
         assert 'href="https://api.mapy.com/copyright"' in attribution
         assert "Seznam.cz a.s. and others" in attribution
 
-    def test_mapy_cz_without_key_is_skipped(self, config):
-        config["map-tiles"]["mapy-cz-api-key"] = ""
-        assert mapgenerator.build_tile_layer("mapy.cz-outdoor", "Outdoor") is None
+    def test_mapy_com_without_key_is_skipped(self, config):
+        config["map-tiles"]["mapy-com-api-key"] = ""
+        assert mapgenerator.build_tile_layer("mapy.com-outdoor", "Outdoor") is None
 
     @pytest.mark.parametrize("tile_key,expected", [
-        ("mapy.cz-winter", "winter"),
-        ("mapy.cz-outdoor", "outdoor"),
-        ("mapy.cz-base", "basic"),
-        ("mapy.cz", "basic"),
-        ("mapy.cz-somethingelse", "basic"),
+        ("mapy.com-winter", "winter"),
+        ("mapy.com-outdoor", "outdoor"),
+        ("mapy.com-base", "basic"),
+        ("mapy.com", "basic"),
+        ("mapy.com-somethingelse", "basic"),
     ])
-    def test_mapy_cz_variant_resolution(self, tile_key, expected):
-        assert mapgenerator._mapy_cz_variant(tile_key) == expected
+    def test_mapy_com_variant_resolution(self, tile_key, expected):
+        assert mapgenerator._mapy_com_variant(tile_key) == expected
 
 
 class TestCreateMapTileSelection:
@@ -214,15 +214,15 @@ class TestCreateMapTileSelection:
         import folium
         config["map-tiles"]["tiles"] = [
             {"tiles": "OpenStreetMap", "name": "OSM"},
-            {"tiles": "mapy.cz-winter", "name": "Winter"},  # no key -> skipped
+            {"tiles": "mapy.com-winter", "name": "Winter"},  # no key -> skipped
         ]
-        config["map-tiles"]["mapy-cz-api-key"] = ""
+        config["map-tiles"]["mapy-com-api-key"] = ""
         config["map-tiles"]["zoom-start"] = 8
         m = mapgenerator.create_map([48.0, 16.0])
 
         tile_names = [c.layer_name for c in m._children.values()
                       if isinstance(c, folium.TileLayer)]
-        assert tile_names == ["OSM"]  # keyless Mapy.cz layer was skipped
+        assert tile_names == ["OSM"]  # keyless Mapy.com layer was skipped
 
 
 class TestCreateMapSmoke:

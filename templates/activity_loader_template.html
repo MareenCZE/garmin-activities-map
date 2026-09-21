@@ -670,7 +670,7 @@ function toggleMapControls() {
  * Mapy.com (Seznam) requires a visible, clickable logo above the map plus a
  * copyright link whenever their tiles are shown. Leaflet's corner attribution
  * carries the copyright text; this adds the required logo and shows it only
- * while a Mapy.cz tile layer is the active base map.
+ * while a Mapy.com tile layer is the active base map.
  * See https://developer.mapy.com/rest-api-mapy-cz/atribution/
  */
 function initializeMapyAttribution() {
@@ -711,8 +711,8 @@ function initializeMapyAttribution() {
     control.addTo(mapInstance);
     const container = control.getContainer();
 
-    // A Mapy.cz base layer is active iff one of the map's tile layers points at
-    // the Mapy tile endpoint.
+    // A Mapy.com base layer is active iff one of the map's tile layers points at
+    // the Mapy tile endpoint (api.mapy.com, or legacy api.mapy.cz).
     function isMapyActive() {
         let active = false;
         mapInstance.eachLayer(function(layer) {

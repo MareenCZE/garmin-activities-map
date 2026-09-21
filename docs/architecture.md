@@ -103,7 +103,7 @@ Pure client JS drives the interactivity:
 - A **noUiSlider date-range slider** filters visible tracks by date; a hamburger **toggle
   control** shows/hides zoom, layer, and slider controls.
 - A **Mapy.com attribution control** (`initializeMapyAttribution`) adds the clickable
-  Mapy.com logo + copyright link their terms require, shown only while a Mapy.cz base
+  Mapy.com logo + copyright link their terms require, shown only while a Mapy.com base
   layer is active (detected by the active tile layer's URL).
 
 ### Tile layers & attribution (`mapgenerator.create_map` / `build_tile_layer`)
@@ -114,8 +114,9 @@ per provider:
 - **CARTO** (`cartodbdark_matter`/`cartodbpositron`/`cartodbvoyager`) — needs a
   `carto-api-key` (watermarked without one, since 2026); built as an explicit keyed URL
   and credited to CARTO + OpenStreetMap with links.
-- **Mapy.cz** (`mapy.cz-*`) — needs a `mapy-cz-api-key`; skipped entirely if absent.
-  Carries the "Seznam.cz a.s. and others" copyright; the logo is added client-side (above).
+- **Mapy.com** (`mapy.com-*`, formerly Mapy.cz) — needs a `mapy-com-api-key`; skipped
+  entirely if absent. Carries the "Seznam.cz a.s. and others" copyright; the logo is
+  added client-side (above).
 
 Attribution for each provider is a terms-of-service requirement — the Leaflet attribution
 control is left enabled and the strings/logo must not be stripped.

@@ -41,10 +41,10 @@ Map controls allow for selection of background map, selection of activity catego
   * run the tool while setting all the processors to OFF and setting utility-mode to ENCRYPT_FTP_PASSWORD
   * replace password in the config with the printed encrypted version
   * switch back all the processors to ON
-* only if you want to use Mapy.cz map tiles (useful mostly for tourist paths in Central Europe region):
-  * go to https://developer.mapy.cz/en/rest-api-mapy-cz/api-key/
+* only if you want to use Mapy.com (formerly Mapy.cz) map tiles (useful mostly for tourist paths in Central Europe region):
+  * go to https://developer.mapy.com/en/rest-api-mapy-cz/api-key/
   * generate your own API key
-  * store the key in config-local.toml in [map-tiles] section as mapy-cz-api-key
+  * store the key in config-local.toml in [map-tiles] section as mapy-com-api-key
 * only if you want to use CARTO map tiles (the "Dark", "Light" and "Voyager" backgrounds):
   * CARTO tiles require an API key since 2026 - without one they are served with an "API KEY REQUIRED" watermark
   * get a free key (5 million tile requests / month) at https://carto.com/basemaps/apikey/
@@ -114,11 +114,12 @@ remove them**:
   [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
 * **CARTO** (Dark/Light/Voyager backgrounds) - credited to CARTO and OpenStreetMap;
   requires your own CARTO API key (see above).
-* **Mapy.com / Seznam.cz** (Mapy.cz backgrounds) - requires your own Mapy.cz API
-  key and, per [their terms](https://developer.mapy.com/rest-api-mapy-cz/atribution/),
-  a visible, clickable Mapy.com logo plus the "Seznam.cz a.s. and others" copyright
-  while a Mapy.cz layer is active. Both are rendered automatically and shown only
-  when a Mapy.cz background is selected.
+* **Mapy.com / Seznam.cz** (Mapy.com backgrounds, formerly Mapy.cz) - requires your
+  own Mapy.com API key and, per
+  [their terms](https://developer.mapy.com/rest-api-mapy-cz/atribution/), a visible,
+  clickable Mapy.com logo plus the "Seznam.cz a.s. and others" copyright while a
+  Mapy.com layer is active. Both are rendered automatically and shown only when a
+  Mapy.com background is selected.
 
 ## Links
 

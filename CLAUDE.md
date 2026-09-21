@@ -51,8 +51,8 @@ polished app — a single user runs it by hand.
 - **Tile attribution is a provider ToS requirement, not decoration.** Keep the
   Leaflet attribution control enabled and don't strip the OSM/CARTO attribution
   strings or the client-side Mapy.com logo control
-  (`initializeMapyAttribution`). CARTO and Mapy.cz tiles also each require the
-  user's own API key.
+  (`initializeMapyAttribution`). CARTO and Mapy.com (formerly Mapy.cz) tiles
+  also each require the user's own API key.
 
 ## Deploy coupling
 
