@@ -62,6 +62,11 @@ locally in .auth directory and will work for a year
 
 
 * If you need to customize behavior of the tool start by understanding config-default.toml and take it from there
+* For automated or scheduled runs (e.g. cron) you can override the [mode] settings on the command
+  line instead of editing config - anything not passed keeps its config value:
+  * `python activities-map.py --downloader ON --map-creator ON --uploader ON`
+  * `python activities-map.py --utility-mode RESORT_CSV`
+  * run `python activities-map.py --help` to see all options
 
 
 ## How it works
@@ -146,8 +151,5 @@ remove them**:
 
 ## Ideas, todos
 
-* it seems, map tiles are loaded for all the maps for the initial view (rather than just for the selected map). Consequent zooming and
-  * panning works as expected. Could save a couple of MB when loading the page if fixed
-* add command line parameters to override config to allow for scheduling of automatic run
 * find all activities in a selection rectangle
 * put it online - hosting with python and storage

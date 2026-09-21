@@ -20,7 +20,9 @@ polished app — a single user runs it by hand.
 - What runs is controlled by the `[mode]` ON/OFF stage flags plus a separate
   `utility-mode` for one-off maintenance ops (`REDOWNLOAD`,
   `REGENERATE_COORDINATES`, `REGENERATE_CSV`, `RESORT_CSV`,
-  `ENCRYPT_FTP_PASSWORD`).
+  `ENCRYPT_FTP_PASSWORD`). These `[mode]` values can be overridden per-run via
+  CLI flags (`--downloader`, `--map-creator`, `--uploader`, `--utility-mode`,
+  `--activity-id`) for scheduled runs — see `activities-map.py` (`main`/`run`).
 - First run prompts for Garmin credentials and caches a ~1-year token under
   `.auth/`.
 
