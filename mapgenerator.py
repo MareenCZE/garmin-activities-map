@@ -96,11 +96,19 @@ def create_map(center):
         tiles=None
     )
 
+    # Only the first base layer is shown on load; the rest stay selectable in the
+    # layer control but aren't added to the map up front. This avoids fetching every
+    # provider's tiles on page load and keeps the active-base-layer detection (e.g.
+    # for the Mapy.com attribution) accurate.
+    shown_a_base_layer = False
     for tile in config['map-tiles']['tiles']:
         layer = build_tile_layer(tile['tiles'], tile['name'])
-        if layer is not None:
-            layer.add_to(activities_map)
-            logger.debug(f"Added tile layer: {tile['name']}")
+        if layer is None:
+            continue
+        layer.show = not shown_a_base_layer
+        shown_a_base_layer = True
+        layer.add_to(activities_map)
+        logger.debug(f"Added tile layer: {tile['name']} (show={layer.show})")
 
     return activities_map
 

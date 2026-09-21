@@ -31,6 +31,18 @@ pip install pytest folium gpxpy simplification cryptography garminconnect garth
 pip install pytest-cov && python -m pytest --cov=. --cov-report=term-missing
 ```
 
+## Optional browser test
+
+`test_browser_mapy.py` drives the generated map in headless Chromium to verify
+the client-side JavaScript that toggles the Mapy.com attribution logo (the one
+thing pure-Python tests can't cover). It **skips automatically** unless Playwright
+and a Chromium build are present:
+
+```bash
+pip install playwright && playwright install chromium
+python -m pytest tests/test_browser_mapy.py
+```
+
 ## Layout
 
 - `test_common.py` — recursive config merge + loaded-config shape
@@ -41,3 +53,5 @@ pip install pytest-cov && python -m pytest --cov=. --cov-report=term-missing
   manifest, and an end-to-end map build
 - `test_ftpuploader.py` — Fernet round-trip, size-based upload decisions, and the
   incremental upload flow (mocked `ftplib.FTP`)
+- `test_browser_mapy.py` — headless-Chromium check of the Mapy.com logo toggle
+  (opt-in; see above)

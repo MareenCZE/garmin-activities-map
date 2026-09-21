@@ -224,6 +224,21 @@ class TestCreateMapTileSelection:
                       if isinstance(c, folium.TileLayer)]
         assert tile_names == ["OSM"]  # keyless Mapy.com layer was skipped
 
+    def test_only_first_base_layer_shown_on_load(self, config):
+        import folium
+        config["map-tiles"]["tiles"] = [
+            {"tiles": "OpenStreetMap", "name": "OSM"},
+            {"tiles": "mapy.com-winter", "name": "Winter"},
+        ]
+        config["map-tiles"]["mapy-com-api-key"] = "MKEY"
+        config["map-tiles"]["zoom-start"] = 8
+        m = mapgenerator.create_map([48.0, 16.0])
+
+        layers = [c for c in m._children.values() if isinstance(c, folium.TileLayer)]
+        show_by_name = {layer.layer_name: layer.show for layer in layers}
+        # only the first base layer loads on page load; the rest are selectable only
+        assert show_by_name == {"OSM": True, "Winter": False}
+
 
 class TestCreateMapSmoke:
     def test_create_map_builds_with_osm_tile(self, config):
