@@ -74,7 +74,8 @@ There are two configuration files:
 * config-default.toml - do not edit, contains default values and explanations of all the properties
 * config-local.toml - put your personal config overrides here. This file is not under version control
 
-See comments in individual files for more details.
+See comments in individual files for more details. A deeper walkthrough of the
+pipeline, data model and output formats is in [docs/architecture.md](docs/architecture.md).
 
 Communication with Garmin Connect is based on [Python: Garmin Connect](https://github.com/cyberjunky/python-garminconnect) library.
 Map generation is done via the [Folium](https://python-visualization.github.io/folium/latest/index.html) library, which creates code based
