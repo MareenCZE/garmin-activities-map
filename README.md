@@ -30,11 +30,13 @@ Map controls allow for selection of background map, selection of activity catego
 
 ![Map controls](images/controls.png)
 
-The rectangle button (top-left) enables the area-selection tool: drag a box on the map to list the
-activities inside it, with per-category and overall totals (distance, time, count) and a toggle
-between counting tracks that are *fully* inside vs *partially* inside the box. It only considers
-activities that are currently visible, so it respects the date-range slider and the category
-selection. Disable it with `enable-area-selection = false` under `[activities]` in your config.
+The rectangle button (in the top-left zoom toolbar) enables the area-selection tool: drag a box on
+the map to list the activities inside it, with per-category and overall totals (distance, time,
+count) and a toggle between counting tracks that are *fully* inside vs *partially* inside the box.
+It only considers activities that are currently visible, so it respects the date-range slider and
+the category selection — and while the box stays up, the list updates live as you move the slider
+or toggle categories. Disable it with `enable-area-selection = false` under `[activities]` in your
+config.
 
 
 ## How to get it working

@@ -104,11 +104,12 @@ Pure client JS drives the interactivity:
 - A **noUiSlider date-range slider** filters visible tracks by date; a hamburger **toggle
   control** shows/hides zoom, layer, and slider controls.
 - An **area-selection tool** (`initializeAreaSelection`, gated by
-  `[activities].enable-area-selection`) adds a rectangle-draw button. Dragging a box lists
-  the activities inside it in a dialog with per-category and overall distance/time/count
-  totals, a "partially inside" vs "fully inside" toggle, and per-row highlight/zoom/Garmin
-  links. It iterates the polylines *currently rendered on the map*, so it honours the active
-  date-range and activity-type filters for free.
+  `[activities].enable-area-selection`) adds a rectangle-draw button to the zoom toolbar (so it
+  folds away with the hamburger). Dragging a box lists the activities inside it in a dialog with
+  per-category and overall distance/time/count totals, a "partially inside" vs "fully inside"
+  toggle, and per-row highlight/zoom/Garmin links. It iterates the polylines *currently rendered
+  on the map*, so it honours the active date-range and activity-type filters for free, and while
+  the box stays up it re-runs the selection live (debounced) when those filters change.
 - A **Mapy.com attribution control** (`initializeMapyAttribution`) adds the clickable
   Mapy.com logo + copyright link their terms require, shown only while a Mapy.com base
   layer is active (detected by the active tile layer's URL).
