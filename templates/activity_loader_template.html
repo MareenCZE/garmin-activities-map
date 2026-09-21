@@ -301,6 +301,7 @@ async function loadManifest() {
         initializeDateRangeSlider();
         initializeToggleControl();
         initializeMapyAttribution();
+        initializeAreaSelection();
 
     } catch (error) {
         console.error('Error loading manifest:', error);
@@ -730,6 +731,300 @@ function initializeMapyAttribution() {
 
     updateMapyVisibility();
     mapInstance.on('baselayerchange', updateMapyVisibility);
+}
+
+/* ============================================================================
+ * Area selection: draw a rectangle to list + summarize the activities inside it.
+ *
+ * Design note: this deliberately iterates the polylines that are *currently
+ * rendered on the map* rather than the raw activityData. The rendered set is
+ * already the date-filtered (filterActivitiesByDateRange) and type-filtered
+ * (layer control on/off) set, so selection respects the current mode for free.
+ * ========================================================================== */
+let areaSelectActive = false;      // "select area" tool armed / drawing
+let areaSelectStart = null;        // L.LatLng where the current drag began
+let areaSelectRectangle = null;    // the L.Rectangle currently on the map
+let areaSelectBounds = null;       // frozen bounds of the last completed rectangle
+let areaSelectMode = 'partial';    // 'partial' (any point inside) | 'full' (all points inside)
+let areaSelectButton = null;
+
+const AREA_SELECT_NORMAL_STYLE = { weight: 2, opacity: 0.8 };
+const AREA_SELECT_HIGHLIGHT_STYLE = { color: '#00FF00', weight: 5, opacity: 1.0 };
+
+function formatDuration(totalMinutes) {
+    const minutes = Math.floor(totalMinutes);
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
+}
+
+function garminActivityLink(activityId) {
+    const url = manifest && manifest.config && manifest.config.garmin_connect_url
+        ? manifest.config.garmin_connect_url
+        : null;
+    return url
+        ? `<a href="${url}${activityId}" target="_blank" rel="noopener" style="color:#007cba;text-decoration:none;">↗</a>`
+        : '';
+}
+
+/**
+ * Every activity currently drawn on the map, tagged with its category. Returns
+ * [{ activity, polyline, category }]. A category counts as visible only when its
+ * layer is actually added to the map (i.e. toggled on in the layer control).
+ */
+function collectVisibleActivities() {
+    const result = [];
+    for (const [category, layer] of Object.entries(layerGroups)) {
+        if (!layer || !mapInstance.hasLayer(layer)) continue;
+        layer.eachLayer(function(polyline) {
+            if (polyline && polyline.activityData) {
+                result.push({ activity: polyline.activityData, polyline, category });
+            }
+        });
+    }
+    return result;
+}
+
+function activityInBounds(activity, bounds, mode) {
+    const coords = activity.coordinates;
+    if (!coords || coords.length === 0) return false;
+    if (mode === 'full') {
+        return coords.every(c => bounds.contains(c));
+    }
+    return coords.some(c => bounds.contains(c));
+}
+
+function computeAreaSelection(bounds, mode) {
+    return collectVisibleActivities().filter(item => activityInBounds(item.activity, bounds, mode));
+}
+
+// ---- Drawing the rectangle -------------------------------------------------
+
+function setAreaSelectArmed(armed) {
+    areaSelectActive = armed;
+    if (areaSelectButton) {
+        areaSelectButton.style.backgroundColor = armed ? '#cfe8ff' : 'white';
+    }
+    const mapEl = mapInstance.getContainer();
+    if (armed) {
+        mapInstance.dragging.disable();
+        mapInstance.boxZoom.disable();
+        mapEl.style.cursor = 'crosshair';
+    } else {
+        mapInstance.dragging.enable();
+        mapInstance.boxZoom.enable();
+        mapEl.style.cursor = '';
+    }
+}
+
+function onAreaSelectMouseDown(e) {
+    if (!areaSelectActive) return;
+    L.DomEvent.preventDefault(e.originalEvent);
+    areaSelectStart = e.latlng;
+    if (areaSelectRectangle) {
+        mapInstance.removeLayer(areaSelectRectangle);
+    }
+    areaSelectRectangle = L.rectangle(L.latLngBounds(areaSelectStart, areaSelectStart), {
+        color: '#2a7de1', weight: 2, dashArray: '5,5', fillOpacity: 0.08, interactive: false
+    }).addTo(mapInstance);
+}
+
+function onAreaSelectMouseMove(e) {
+    if (!areaSelectActive || !areaSelectStart || !areaSelectRectangle) return;
+    areaSelectRectangle.setBounds(L.latLngBounds(areaSelectStart, e.latlng));
+}
+
+function onAreaSelectMouseUp(e) {
+    if (!areaSelectActive || !areaSelectStart) return;
+    const bounds = L.latLngBounds(areaSelectStart, e.latlng);
+    areaSelectStart = null;
+    setAreaSelectArmed(false);
+
+    // A click (or a rectangle a few pixels wide) is treated as "cancel".
+    const nw = mapInstance.latLngToLayerPoint(bounds.getNorthWest());
+    const se = mapInstance.latLngToLayerPoint(bounds.getSouthEast());
+    if (Math.abs(nw.x - se.x) < 5 || Math.abs(nw.y - se.y) < 5) {
+        clearAreaSelection();
+        return;
+    }
+
+    areaSelectBounds = bounds;
+    showSelectionDialog();
+}
+
+function clearAreaSelection() {
+    if (areaSelectRectangle) {
+        mapInstance.removeLayer(areaSelectRectangle);
+        areaSelectRectangle = null;
+    }
+    areaSelectBounds = null;
+    const dialog = document.getElementById('area-selection-dialog');
+    if (dialog) dialog.remove();
+}
+
+// ---- The results dialog ----------------------------------------------------
+
+function showSelectionDialog() {
+    const existing = document.getElementById('area-selection-dialog');
+    if (existing) existing.remove();
+
+    const selection = areaSelectBounds ? computeAreaSelection(areaSelectBounds, areaSelectMode) : [];
+
+    const dialog = document.createElement('div');
+    dialog.id = 'area-selection-dialog';
+    dialog.style.cssText = `
+        position: absolute;
+        top: 60px;
+        right: 10px;
+        width: 340px;
+        max-height: calc(100vh - 80px);
+        z-index: 1001;
+        display: flex;
+        flex-direction: column;
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        border-radius: 8px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        color: #333;
+        overflow: hidden;
+    `;
+
+    // --- Summary aggregation, grouped by category ---
+    const groups = {};
+    let totalDistance = 0, totalDuration = 0;
+    selection.forEach(function(item) {
+        totalDistance += Number(item.activity.distance) || 0;
+        totalDuration += Number(item.activity.duration) || 0;
+        const g = groups[item.category] || (groups[item.category] = {
+            count: 0, distance: 0, duration: 0, color: item.activity.color
+        });
+        g.count++;
+        g.distance += Number(item.activity.distance) || 0;
+        g.duration += Number(item.activity.duration) || 0;
+    });
+
+    const perTypeRows = Object.entries(groups)
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([name, g]) => `
+            <div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
+                <span style="width:10px;height:10px;border-radius:2px;background:${g.color};display:inline-block;flex:0 0 auto;"></span>
+                <span style="flex:1;">${name}</span>
+                <span>${g.count} · ${g.distance.toFixed(1)} km · ${formatDuration(g.duration)}</span>
+            </div>
+        `).join('');
+
+    // --- Activity rows (newest first) ---
+    const listRows = selection
+        .slice()
+        .sort((a, b) => (a.activity.date < b.activity.date ? 1 : -1))
+        .map(function(item, idx) {
+            const a = item.activity;
+            return `
+            <div class="area-sel-row" data-idx="${idx}" style="display:flex;gap:6px;padding:5px 8px;border-top:1px solid rgba(0,0,0,0.07);cursor:pointer;align-items:baseline;">
+                <span style="width:8px;height:8px;border-radius:2px;background:${a.color};display:inline-block;flex:0 0 auto;align-self:center;"></span>
+                <span style="flex:0 0 auto;color:#666;">${a.date}</span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${a.name}">${a.name}</span>
+                <span style="flex:0 0 auto;">${(Number(a.distance) || 0).toFixed(1)}km</span>
+                <span style="flex:0 0 auto;color:#666;">${formatDuration(a.duration)}</span>
+                <span style="flex:0 0 auto;">${garminActivityLink(a.activity_id)}</span>
+            </div>`;
+        }).join('');
+
+    const emptyMsg = '<div style="padding:12px 10px;color:#888;">No visible activities in this area. Try "partially inside", or check the date / type filters.</div>';
+
+    dialog.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid rgba(0,0,0,0.1);">
+            <strong style="font-size:13px;">Selection</strong>
+            <span id="area-sel-close" title="Close" style="cursor:pointer;font-size:16px;line-height:1;color:#666;padding:0 4px;">✕</span>
+        </div>
+        <div style="padding:8px 10px;">
+            <label style="margin-right:12px;cursor:pointer;"><input type="radio" name="area-sel-mode" value="partial" ${areaSelectMode === 'partial' ? 'checked' : ''}> Partially inside</label>
+            <label style="cursor:pointer;"><input type="radio" name="area-sel-mode" value="full" ${areaSelectMode === 'full' ? 'checked' : ''}> Fully inside</label>
+        </div>
+        <div style="padding:0 10px 8px 10px;border-bottom:1px solid rgba(0,0,0,0.1);">
+            <div style="font-weight:bold;margin-bottom:4px;">
+                ${selection.length} activit${selection.length === 1 ? 'y' : 'ies'} · ${totalDistance.toFixed(1)} km · ${formatDuration(totalDuration)}
+            </div>
+            ${perTypeRows}
+        </div>
+        <div style="overflow-y:auto;">
+            ${selection.length ? listRows : emptyMsg}
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    L.DomEvent.disableClickPropagation(dialog);
+    L.DomEvent.disableScrollPropagation(dialog);
+
+    dialog.querySelector('#area-sel-close').onclick = clearAreaSelection;
+
+    dialog.querySelectorAll('input[name="area-sel-mode"]').forEach(function(input) {
+        input.onchange = function() {
+            areaSelectMode = this.value;
+            showSelectionDialog(); // recompute from the frozen bounds
+        };
+    });
+
+    // Row interactions: hover highlights the track, click zooms to it + opens popup.
+    dialog.querySelectorAll('.area-sel-row').forEach(function(row) {
+        const item = selection[parseInt(row.dataset.idx, 10)];
+        if (!item || !item.polyline) return;
+        const baseStyle = Object.assign({ color: item.activity.color }, AREA_SELECT_NORMAL_STYLE);
+        row.addEventListener('mouseenter', function() {
+            row.style.background = 'rgba(0,124,186,0.10)';
+            item.polyline.setStyle(AREA_SELECT_HIGHLIGHT_STYLE);
+            item.polyline.bringToFront();
+        });
+        row.addEventListener('mouseleave', function() {
+            row.style.background = '';
+            item.polyline.setStyle(baseStyle);
+        });
+        row.addEventListener('click', function(e) {
+            if (e.target.tagName === 'A') return; // let the Garmin link work normally
+            mapInstance.fitBounds(item.polyline.getBounds(), { maxZoom: 14 });
+            item.polyline.openPopup();
+        });
+    });
+}
+
+function initializeAreaSelection() {
+    if (!mapInstance) return;
+    if (manifest && manifest.config && manifest.config.enable_area_selection === false) {
+        console.log('Area selection disabled by config');
+        return;
+    }
+
+    const AreaSelectControl = L.Control.extend({
+        options: { position: 'topleft' },
+        onAdd: function() {
+            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+            const button = L.DomUtil.create('a', 'leaflet-control-area-select', container);
+            button.href = '#';
+            button.title = 'Select area';
+            button.role = 'button';
+            button.innerHTML = '<span style="font-size:16px;line-height:30px;">▭</span>';
+            button.style.cssText = 'width:30px;height:30px;text-align:center;display:block;' +
+                'background-color:white;cursor:pointer;text-decoration:none;color:black;';
+            areaSelectButton = button;
+            button.onclick = function(e) {
+                L.DomEvent.stop(e);
+                if (areaSelectActive) {
+                    setAreaSelectArmed(false);          // toggle off if already armed
+                } else {
+                    clearAreaSelection();               // drop any previous rectangle/dialog
+                    setAreaSelectArmed(true);
+                }
+            };
+            return container;
+        }
+    });
+
+    mapInstance.addControl(new AreaSelectControl());
+    mapInstance.on('mousedown', onAreaSelectMouseDown);
+    mapInstance.on('mousemove', onAreaSelectMouseMove);
+    mapInstance.on('mouseup', onAreaSelectMouseUp);
 }
 
 document.addEventListener('DOMContentLoaded', function() {

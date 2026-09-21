@@ -64,6 +64,9 @@ tiles = [
 [activities]
 # Highlight activities on mouse hover. Makes output larger (7.8 MB instead of 6.3 MB after minification).
 enable-activity-highlighting = true
+# Enable the "select area" tool: draw a rectangle on the map to list + summarize the activities inside it.
+# Only activities currently visible (respecting the date and activity-type filters) are considered.
+enable-area-selection = true
 # This defines categories of activities. Each activity needs to belong to a category.
 # If no match for activity type_key is found, it is put into the first 'default' category.
 # You can see type_key value of an activity in its json.

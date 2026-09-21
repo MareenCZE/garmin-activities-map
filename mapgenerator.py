@@ -264,6 +264,7 @@ def create_activity_data_files(activities, output_dir):
         },
         'config': {
             'enable_highlighting': config['activities']['enable-activity-highlighting'],
+            'enable_area_selection': config['activities'].get('enable-area-selection', True),
             'garmin_connect_url': config.get('garmin-connect-activity-url', 'https://connect.garmin.com/modern/activity/')
         }
     }

@@ -87,7 +87,8 @@ history):
   activity objects: `{coordinates, color, date, name, activity_type, distance, duration,
   activity_id}`. Written compact (no whitespace).
 - `output/data/manifest.json` — lists categories (data file, count, colour, `show_on_load`),
-  the overall `date_range`, and a `config` block (`enable_highlighting`, `garmin_connect_url`).
+  the overall `date_range`, and a `config` block (`enable_highlighting`,
+  `enable_area_selection`, `garmin_connect_url`).
 - `output/activities_map.html` — a Folium map with empty `FeatureGroup`s per category and a
   `LayerControl`. Folium's generated HTML is then post-processed: noUiSlider CSS/JS is
   injected, the map's JS variable name is discovered by regex, and the JavaScript from
@@ -102,6 +103,12 @@ Pure client JS drives the interactivity:
   duration + Garmin Connect link), and does hover/popup highlighting (bright green).
 - A **noUiSlider date-range slider** filters visible tracks by date; a hamburger **toggle
   control** shows/hides zoom, layer, and slider controls.
+- An **area-selection tool** (`initializeAreaSelection`, gated by
+  `[activities].enable-area-selection`) adds a rectangle-draw button. Dragging a box lists
+  the activities inside it in a dialog with per-category and overall distance/time/count
+  totals, a "partially inside" vs "fully inside" toggle, and per-row highlight/zoom/Garmin
+  links. It iterates the polylines *currently rendered on the map*, so it honours the active
+  date-range and activity-type filters for free.
 - A **Mapy.com attribution control** (`initializeMapyAttribution`) adds the clickable
   Mapy.com logo + copyright link their terms require, shown only while a Mapy.com base
   layer is active (detected by the active tile layer's URL).

@@ -115,6 +115,7 @@ class TestCreateActivityDataFiles:
         assert manifest["categories"]["Other"]["data_file"] is None
         assert manifest["date_range"] == {"min_date": "2024-01-01", "max_date": "2024-06-06"}
         assert manifest["config"]["enable_highlighting"] is True
+        assert manifest["config"]["enable_area_selection"] is True
 
     def test_manifest_file_written_to_disk(self, storage_env, mapping_config):
         acts = [make_activity(storage, activity_id=1, activity_type="running", filename="a")]
