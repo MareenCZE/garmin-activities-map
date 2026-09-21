@@ -55,6 +55,7 @@ tiles = [
     { tiles='OpenStreetMap', name="OSM" },
     { tiles='cartodbdark_matter', name="Dark" },
     { tiles='cartodbpositron', name="Light" },
+    { tiles='cartodbvoyager', name="Voyager" },
     { tiles='mapy.cz-winter', name="Mapy.cz Winter" },
     { tiles='mapy.cz-outdoor', name="Mapy.cz Outdoor" }
 ]
