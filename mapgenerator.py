@@ -35,18 +35,18 @@ def get_type_mappings():
     for mapping in config['activities']['mapping']:
         show_on_load = mapping.get('name') in config['activities']['display-mapping-on-load']
         mappings.append(TypeMapping(mapping.get('name'), mapping.get('color'), mapping.get('type_keys'), show_on_load))
-    if len(mappings) == 0:
-        raise ValueError("No type mappings found. Cannot continue. Fix [map-tiles][tiles] config")
+    if not mappings:
+        raise ValueError("No type mappings found. Cannot continue. Fix [activities][mapping] config")
     return mappings
 
 
-def get_type_mapping(mappings: [], type_key: str) -> TypeMapping:
+def get_type_mapping(mappings: List[TypeMapping], type_key: str) -> TypeMapping:
     for mapping in mappings:
         if mapping.contains_key(type_key):
             return mapping
 
     if type_key not in uncategorized_activity_types:
-        logger.debug(f"Unmapped activity type: {type_key}. Putting it into '{mappings[0]}' category")
+        logger.debug(f"Unmapped activity type: {type_key}. Putting it into '{mappings[0].name}' category")
         uncategorized_activity_types.add(type_key)
     return mappings[0]
 
@@ -61,7 +61,7 @@ def calculate_map_center(activities):
     count = 0
 
     for activity in activities:
-        if activity.coordinates and len(activity.coordinates) > 0:
+        if activity.coordinates:
             # Use first coordinate as representative point
             first_coord = activity.coordinates[0]
             if len(first_coord) >= 2:
@@ -274,26 +274,24 @@ def create_activity_data_files(activities, output_dir):
     manifest_categories = {}
 
     for category_name, category_data in categories.items():
-        if category_data['activities']:
+        category_activities = category_data['activities']
+
+        data_file = None
+        if category_activities:
             filename = f"{category_name.lower().replace(' ', '_')}_activities.json"
             filepath = os.path.join(data_dir, filename)
 
             with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(category_data['activities'], f, separators=(',', ':'))
+                json.dump(category_activities, f, separators=(',', ':'))
 
-            manifest_categories[category_name] = {
-                'data_file': f'data/{filename}',
-                'activity_count': len(category_data['activities']),
-                'color': category_data['color'],
-                'show_on_load': category_data['show_on_load']
-            }
-        else:
-            manifest_categories[category_name] = {
-                'data_file': None,
-                'activity_count': 0,
-                'color': category_data['color'],
-                'show_on_load': category_data['show_on_load']
-            }
+            data_file = f'data/{filename}'
+
+        manifest_categories[category_name] = {
+            'data_file': data_file,
+            'activity_count': len(category_activities),
+            'color': category_data['color'],
+            'show_on_load': category_data['show_on_load']
+        }
 
     # Create manifest
     manifest = {

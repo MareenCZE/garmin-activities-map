@@ -7,6 +7,10 @@ from typing import List
 from common import logger, config
 
 
+def database_filename():
+    return config['storage']['activities-database']
+
+
 def init_directories():
     activities_config = config['storage']
     os.makedirs(activities_config['directory-json'], exist_ok=True)
@@ -41,18 +45,18 @@ class Activity:
 
 def load_activities_from_csv(load_coordinates=True):
     activities = []
-    csv_filename = config['storage']['activities-database']
+    csv_filename = database_filename()
     logger.info(f"Reading activities from {csv_filename}")
     with open(csv_filename, mode='r', newline='') as csv_file:
         reader = csv.DictReader(csv_file)
         for row in reader:
             activity = Activity(
                 activity_id=int(row['activity_id']),
-                distance=float(row['distance']),
-                duration=float(row['duration']),
+                distance=row['distance'],
+                duration=row['duration'],
                 date=row['date'],
                 time=row['time'],
-                has_gps_data=True if row['has_gps_data'] == 'True' else False,
+                has_gps_data=row['has_gps_data'] == 'True',
                 filename=row['filename'],
                 activity_type=row['type'],
                 name=row['name']
@@ -75,7 +79,8 @@ def read_coordinates(filename):
     return coordinates
 
 
-def write_database(activities: List[Activity], filename=config['storage']['activities-database']):
+def write_database(activities: List[Activity], filename=None):
+    filename = filename or database_filename()
     logger.info(f"Writing into {filename}")
     with open(filename, mode='w', newline='') as csv_file:
         writer = create_writer(csv_file)
@@ -97,7 +102,8 @@ def write_activity(writer, activity: Activity):
          'has_gps_data': str(activity.has_gps_data)})
 
 
-def create_appender(filename=config['storage']['activities-database']):
+def create_appender(filename=None):
+    filename = filename or database_filename()
     logger.info(f"Output going into {filename}")
     return open(filename, mode='a', newline='')
 
@@ -110,9 +116,9 @@ def create_writer(file_handler):
 def load_and_backup():
     # create a backup
     timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-    backup_filename = f"{config['storage']['activities-database']}.{timestamp}"
+    backup_filename = f"{database_filename()}.{timestamp}"
     logger.info(f"Creating a backup - {backup_filename}")
-    shutil.copy2(config['storage']['activities-database'], backup_filename)
+    shutil.copy2(database_filename(), backup_filename)
 
     activities = load_activities_from_csv(False)
     logger.info(f"Loaded {len(activities)} activities")
@@ -123,7 +129,7 @@ def resort_database():
     logger.info("Re-sorting the database")
     activities = load_and_backup()
     sorted_activities = sorted(activities, key=lambda activity: (activity.date, activity.activity_id))
-    write_database(sorted_activities, config['storage']['activities-database'])
+    write_database(sorted_activities)
 
 
 def delete_activity(activity_id):
@@ -132,12 +138,12 @@ def delete_activity(activity_id):
     activity = next((activity for activity in activities if activity.activity_id == activity_id), None)
 
     if not activity:
-        logger.warning(f"Activity not found in the database. Nothing deleted")
+        logger.warning("Activity not found in the database. Nothing deleted")
         return
 
     activities.remove(activity)
     delete_activity_files(activity)
-    write_database(activities, config['storage']['activities-database'])
+    write_database(activities)
 
 
 def delete_activity_files(activity: Activity):
@@ -157,7 +163,7 @@ def update_activity(new_activity: Activity):
     old_activity = next((activity for activity in activities if activity.activity_id == new_activity.activity_id), None)
 
     if not old_activity:
-        logger.warning(f"Activity not found in the database. Nothing to be updated")
+        logger.warning("Activity not found in the database. Nothing to be updated")
         return
 
     # date and type are part of filename, if they differ, the old files need to be deleted
@@ -169,4 +175,4 @@ def update_activity(new_activity: Activity):
     logger.info(f"Replacing {str(old_activity)} with {str(new_activity)}")
     index = activities.index(old_activity)
     activities[index] = new_activity
-    write_database(activities, config['storage']['activities-database'])
+    write_database(activities)

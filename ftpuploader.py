@@ -71,7 +71,7 @@ def should_upload_file(local_file_path, remote_file_info):
 def upload_map_with_data_to_ftp_incremental(html_filename: str):
     """Upload HTML file and JSON data files to FTP, only uploading changed files"""
     if not config["ftp"]["host"]:
-        logger.info(f"Skipping upload to FTP - no FTP config provided")
+        logger.info("Skipping upload to FTP - no FTP config provided")
         return
 
     ftp_config = FtpConfig.create_config(config)
@@ -93,6 +93,7 @@ def upload_map_with_data_to_ftp_incremental(html_filename: str):
     files_skipped = 0
     total_size_uploaded = 0
 
+    ftp = None
     try:
         logger.info(f"Connecting to {ftp_config.host} as {ftp_config.user}")
         ftp = ftplib.FTP(ftp_config.host)
@@ -156,15 +157,15 @@ def upload_map_with_data_to_ftp_incremental(html_filename: str):
             logger.info("No files needed uploading - all files are up to date")
 
     except ftplib.all_errors as e:
-        logger.error("Failed to FTP the files. {0}", e)
+        logger.error(f"Failed to FTP the files. {e}")
     finally:
-        ftp.quit()
+        close_ftp(ftp)
 
 
 def upload_map_with_data_to_ftp(html_filename: str):
     """Upload HTML file and associated JSON data files to FTP (full upload)"""
     if not config["ftp"]["host"]:
-        logger.info(f"Skipping upload to FTP - no FTP config provided")
+        logger.info("Skipping upload to FTP - no FTP config provided")
         return
 
     ftp_config = FtpConfig.create_config(config)
@@ -182,6 +183,7 @@ def upload_map_with_data_to_ftp(html_filename: str):
         logger.error(f"Data directory not found: {data_dir}")
         return
 
+    ftp = None
     try:
         logger.info(f"Connecting to {ftp_config.host} as {ftp_config.user}")
         ftp = ftplib.FTP(ftp_config.host)
@@ -226,19 +228,30 @@ def upload_map_with_data_to_ftp(html_filename: str):
             total_size += json_file.stat().st_size
 
         logger.info(f"Successfully uploaded map with data files. Total size: {round(total_size / 1048576, 2)} MB")
-        logger.info(f"Files uploaded:")
+        logger.info("Files uploaded:")
         logger.info(f"  - {ftp_config.remote_path}/{ftp_config.remote_filename}")
         for json_file in json_files:
             logger.info(f"  - {ftp_config.remote_path}/data/{json_file.name}")
 
     except ftplib.all_errors as e:
-        logger.error("Failed to FTP the files. {0}", e)
+        logger.error(f"Failed to FTP the files. {e}")
     finally:
+        close_ftp(ftp)
+
+
+def close_ftp(ftp):
+    """Quietly close an FTP connection that may be None or already broken."""
+    if ftp is None:
+        return
+    try:
         ftp.quit()
+    except ftplib.all_errors:
+        pass
 
 
 def clean_remote_data_directory(ftp_config):
     """Clean old JSON files from the remote data directory before uploading new ones"""
+    ftp = None
     try:
         ftp = ftplib.FTP(ftp_config.host)
         ftp.login(user=ftp_config.user, passwd=ftp_config.password)
@@ -275,16 +288,13 @@ def clean_remote_data_directory(ftp_config):
     except ftplib.all_errors as e:
         logger.warning(f"Could not clean remote data directory: {e}")
     finally:
-        try:
-            ftp.quit()
-        except:
-            pass
+        close_ftp(ftp)
 
 
 def upload_map_with_data_to_ftp_clean(html_filename: str):
     """Upload HTML file and JSON data files to FTP, cleaning old JSON files first"""
     if not config["ftp"]["host"]:
-        logger.info(f"Skipping upload to FTP - no FTP config provided")
+        logger.info("Skipping upload to FTP - no FTP config provided")
         return
 
     ftp_config = FtpConfig.create_config(config)

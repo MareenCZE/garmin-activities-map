@@ -30,26 +30,26 @@ def download_activities(api: Garmin, from_date=None, to_date=None):
     existing_activities = storage.load_activities_from_csv(False)
 
     if not from_date:
-        if len(existing_activities) == 0:
+        if not existing_activities:
             from_date = "1970-01-01"
         else:
-            from_date = existing_activities[len(existing_activities) - 1].date
+            from_date = existing_activities[-1].date
         logger.info(f"From date not specified. Using date from last stored activity: {from_date}")
 
     api_activities = api.get_activities_by_date(from_date, to_date, None, "asc")
 
     max_number_of_activities = config["activities"]["max-number-of-activities"]
     if len(api_activities) > max_number_of_activities:
-        logger.warn(
+        logger.warning(
             f"Too many activities to process ({len(api_activities)}). Going to process only the first {max_number_of_activities}. Consider using from_date and to_date.")
         api_activities = api_activities[0:max_number_of_activities]
 
     logger.info(f"Going to process {len(api_activities)} activities")
-    processed_activity_ids = get_processed_activity_ids(existing_activities)
+    processed_activity_ids = set(get_processed_activity_ids(existing_activities))
 
     with storage.create_appender() as appender:
         writer = storage.create_writer(appender)
-        if len(processed_activity_ids) == 0:
+        if not processed_activity_ids:
             writer.writeheader()
 
         for api_activity in api_activities:
@@ -91,9 +91,9 @@ def save_json_and_gpx(api: Garmin, activity: storage.Activity, api_activity):
         json.dump(api_activity, json_file)
 
     gpx_data = api.download_activity(activity.activity_id, dl_fmt=api.ActivityDownloadFormat.GPX)
-    if len(gpx_data) > 0:
+    if gpx_data:
         coordinates = simplify_coordinates(gpx_data)
-        if len(coordinates) > 0:
+        if coordinates:
             logger.info(f"Writing {activity.gpx_filename}")
             with open(activity.gpx_filename, "wb") as gpx_file:
                 gpx_file.write(gpx_data)
@@ -158,7 +158,7 @@ def reload_activity(api: Garmin, activity_id):
     storage.update_activity(activity)
 
 
-def get_datetime_from_activity(activity_json: json):
+def get_datetime_from_activity(activity_json: dict):
     if activity_json.get('startTimeLocal'):
         start_time_field = activity_json.get('startTimeLocal')
     else:
