@@ -9,3 +9,8 @@ __pycache__/
 .qodo
 .codiumai
 .DS_Store
+
+# test artifacts
+.pytest_cache/
+.coverage
+venv/
