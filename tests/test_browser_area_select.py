@@ -40,8 +40,8 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def _make_track(activity_id, name, coords):
-    a = storage.Activity(activity_id, 5.0, 42.0, "2024-05-01", "07:30",
+def _make_track(activity_id, name, coords, date="2024-05-01"):
+    a = storage.Activity(activity_id, 5.0, 42.0, date, "07:30",
                           f"f{activity_id}", True, "running", name)
     a.coordinates = coords
     return a
@@ -62,8 +62,11 @@ def served_map(config, tmp_path):
     config["map-tiles"]["center-point"] = [50.00, 14.00]
     config["activities"]["display-mapping-on-load"] = ["Running"]
 
-    alpha = _make_track(1, "Alpha", [[50.000, 14.000], [50.005, 14.005]])
-    bravo = _make_track(2, "Bravo", [[50.000, 14.000], [50.200, 14.300]])
+    # Distinct dates so the newest-first display order (Bravo, Alpha) differs from
+    # the collection order (Alpha, Bravo) — the case that exposed the row/highlight
+    # index mismatch bug.
+    alpha = _make_track(1, "Alpha", [[50.000, 14.000], [50.005, 14.005]], date="2024-05-01")
+    bravo = _make_track(2, "Bravo", [[50.000, 14.000], [50.200, 14.300]], date="2024-06-01")
 
     out_html = tmp_path / "activities_map.html"
     mapgenerator.create_map_with_activities([alpha, bravo], str(out_html))
@@ -174,6 +177,75 @@ def test_respects_type_filter(served_map):
             dialog = page.locator("#area-selection-dialog")
             assert dialog.locator(".area-sel-row").count() == 0
             assert "0 activities" in dialog.locator("div[style*='font-weight:bold']").first.inner_text()
+        finally:
+            browser.close()
+
+
+def _highlighted_track_names(page):
+    """Names of the Running polylines currently drawn with the highlight colour."""
+    return page.evaluate(
+        """() => {
+        const names = [];
+        (layerGroups['Running'] || {eachLayer: () => {}}).eachLayer(pl => {
+            if (pl.options && pl.options.color === '#00FF00') names.push(pl.activityData.name);
+        });
+        return names;
+    }"""
+    )
+
+
+def test_row_hover_highlights_matching_track(served_map):
+    """Hovering a row must highlight the track shown in that row (regression)."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page = browser.new_page()
+            page.goto(served_map)
+            _wait_loaded(page)
+            _drag_box_around_origin(page)
+
+            rows = page.locator("#area-selection-dialog .area-sel-row")
+            assert rows.count() == 2
+
+            for i in range(2):
+                shown = rows.nth(i).locator("span[title]").get_attribute("title")
+                rows.nth(i).hover()
+                page.wait_for_function(
+                    "(name) => {const hi=[];(layerGroups['Running']||{eachLayer:()=>{}})"
+                    ".eachLayer(pl=>{if(pl.options&&pl.options.color==='#00FF00')hi.push(pl.activityData.name);});"
+                    "return hi.length===1 && hi[0]===name;}",
+                    arg=shown,
+                    timeout=5000,
+                )
+                assert _highlighted_track_names(page) == [shown]
+        finally:
+            browser.close()
+
+
+def test_button_in_zoom_bar_and_folds_with_hamburger(served_map):
+    """The tool sits in the zoom toolbar and hides when the hamburger folds controls."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page = browser.new_page()
+            page.goto(served_map)
+            _wait_loaded(page)
+
+            # Button is a child of the zoom control (next to +/-).
+            assert page.locator(".leaflet-control-zoom .leaflet-control-area-select").count() == 1
+            assert page.locator(".leaflet-control-area-select").is_visible()
+
+            # Hamburger folds the zoom bar away -> the tool goes with it.
+            page.locator(".leaflet-control-toggle-menu").click()
+            page.wait_for_function(
+                "() => getComputedStyle(document.querySelector('.leaflet-control-zoom')).display === 'none'",
+                timeout=5000,
+            )
+            assert not page.locator(".leaflet-control-area-select").is_visible()
         finally:
             browser.close()
 
