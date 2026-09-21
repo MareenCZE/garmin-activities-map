@@ -45,6 +45,10 @@ Map controls allow for selection of background map, selection of activity catego
   * go to https://developer.mapy.cz/en/rest-api-mapy-cz/api-key/
   * generate your own API key
   * store the key in config-local.toml in [map-tiles] section as mapy-cz-api-key
+* only if you want to use CARTO map tiles (the "Dark", "Light" and "Voyager" backgrounds):
+  * CARTO tiles require an API key since 2026 - without one they are served with an "API KEY REQUIRED" watermark
+  * get a free key (5 million tile requests / month) at https://carto.com/basemaps/apikey/
+  * store the key in config-local.toml in [map-tiles] section as carto-api-key
 * on the first run you will be asked for your Garmin credentials. It will then generate an authentication token which will be persisted 
 locally in .auth directory and will work for a year
 
@@ -92,6 +96,29 @@ If it is just one activity or so, you can work around it with a couple of manual
 - use the utility mode to regenerate coordinates, adjust code just for this activity id. Search for
     REGENERATE_COORDINATES
 - revert everything to BAU
+
+## Licensing and attribution
+
+This tool is released under the [MIT license](LICENSE). The Python and JavaScript
+libraries it builds on (Folium, Leaflet, noUiSlider, gpxpy, and so on) are all
+under permissive licenses (MIT / BSD / Apache-2.0).
+
+The generated map embeds third-party map tiles, and the providers' terms require
+their attribution to stay visible. The tool renders these automatically - **do not
+remove them**:
+
+* **OpenStreetMap** - map data © OpenStreetMap contributors
+  ([ODbL](https://www.openstreetmap.org/copyright)); shown in the map's attribution
+  control. The built-in "OSM" background uses OpenStreetMap's own tile servers,
+  which are fine for a personal, low-traffic map but are subject to the
+  [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+* **CARTO** (Dark/Light/Voyager backgrounds) - credited to CARTO and OpenStreetMap;
+  requires your own CARTO API key (see above).
+* **Mapy.com / Seznam.cz** (Mapy.cz backgrounds) - requires your own Mapy.cz API
+  key and, per [their terms](https://developer.mapy.com/rest-api-mapy-cz/atribution/),
+  a visible, clickable Mapy.com logo plus the "Seznam.cz a.s. and others" copyright
+  while a Mapy.cz layer is active. Both are rendered automatically and shown only
+  when a Mapy.cz background is selected.
 
 ## Links
 

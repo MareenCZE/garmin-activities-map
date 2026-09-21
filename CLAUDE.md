@@ -48,6 +48,11 @@ polished app — a single user runs it by hand.
   which is always re-uploaded). Keep this in mind when touching upload logic.
 - `closure-compiler-*.jar` and stray `data/map*.js` are obsolete minification
   leftovers — minification was removed. Don't wire them back in.
+- **Tile attribution is a provider ToS requirement, not decoration.** Keep the
+  Leaflet attribution control enabled and don't strip the OSM/CARTO attribution
+  strings or the client-side Mapy.com logo control
+  (`initializeMapyAttribution`). CARTO and Mapy.cz tiles also each require the
+  user's own API key.
 
 ## Deploy coupling
 

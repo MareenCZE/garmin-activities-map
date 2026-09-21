@@ -300,6 +300,7 @@ async function loadManifest() {
         setupMapEventListeners();
         initializeDateRangeSlider();
         initializeToggleControl();
+        initializeMapyAttribution();
 
     } catch (error) {
         console.error('Error loading manifest:', error);
@@ -663,6 +664,72 @@ function toggleMapControls() {
     if (sliderContainer) {
         sliderContainer.style.display = (sliderContainer.style.display === 'none') ? '' : 'none';
     }
+}
+
+/**
+ * Mapy.com (Seznam) requires a visible, clickable logo above the map plus a
+ * copyright link whenever their tiles are shown. Leaflet's corner attribution
+ * carries the copyright text; this adds the required logo and shows it only
+ * while a Mapy.cz tile layer is the active base map.
+ * See https://developer.mapy.com/rest-api-mapy-cz/atribution/
+ */
+function initializeMapyAttribution() {
+    if (!mapInstance) return;
+
+    const style = document.createElement('style');
+    style.textContent = `
+        .mapy-attribution {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.85);
+            padding: 3px 6px;
+            border-radius: 4px;
+            font: 11px/1.2 Arial, sans-serif;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+        .mapy-attribution img { display: block; height: 30px; }
+        .mapy-attribution a { color: #0055ff; text-decoration: none; }
+    `;
+    document.head.appendChild(style);
+
+    const MapyControl = L.Control.extend({
+        options: { position: 'bottomleft' },
+        onAdd: function() {
+            const div = L.DomUtil.create('div', 'mapy-attribution');
+            div.innerHTML =
+                '<a href="https://mapy.com/" target="_blank" rel="noopener">' +
+                '<img src="https://api.mapy.com/img/api/logo.svg" alt="Mapy.com"></a>' +
+                '<span>&copy; <a href="https://api.mapy.com/copyright" target="_blank" rel="noopener">' +
+                'Seznam.cz a.s. and others</a></span>';
+            L.DomEvent.disableClickPropagation(div);
+            return div;
+        }
+    });
+
+    const control = new MapyControl();
+    control.addTo(mapInstance);
+    const container = control.getContainer();
+
+    // A Mapy.cz base layer is active iff one of the map's tile layers points at
+    // the Mapy tile endpoint.
+    function isMapyActive() {
+        let active = false;
+        mapInstance.eachLayer(function(layer) {
+            const url = layer && layer._url;
+            if (typeof url === 'string' && url.indexOf('api.mapy.c') !== -1) {
+                active = true;
+            }
+        });
+        return active;
+    }
+
+    function updateMapyVisibility() {
+        container.style.display = isMapyActive() ? 'flex' : 'none';
+    }
+
+    updateMapyVisibility();
+    mapInstance.on('baselayerchange', updateMapyVisibility);
 }
 
 document.addEventListener('DOMContentLoaded', function() {

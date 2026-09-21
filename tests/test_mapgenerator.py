@@ -172,6 +172,10 @@ class TestBuildTileLayer:
         layer = mapgenerator.build_tile_layer("cartodbdark_matter", "Dark")
         assert "basemaps.cartocdn.com/dark_all/" in layer.tiles
         assert "key=KEY42" in layer.tiles
+        # CARTO terms: credit both CARTO and OSM, with links
+        attribution = layer.options["attribution"]
+        assert 'href="https://carto.com/attributions"' in attribution
+        assert 'href="https://www.openstreetmap.org/copyright"' in attribution
 
     def test_carto_without_key_falls_back_to_watermarked_shorthand(self, config):
         config["map-tiles"]["carto-api-key"] = ""
@@ -185,6 +189,10 @@ class TestBuildTileLayer:
         layer = mapgenerator.build_tile_layer("mapy.cz-winter", "Winter")
         assert "api.mapy.cz/v1/maptiles/winter/" in layer.tiles
         assert "apikey=MKEY" in layer.tiles
+        # Mapy.com terms: exact copyright text linked to their copyright page
+        attribution = layer.options["attribution"]
+        assert 'href="https://api.mapy.com/copyright"' in attribution
+        assert "Seznam.cz a.s. and others" in attribution
 
     def test_mapy_cz_without_key_is_skipped(self, config):
         config["map-tiles"]["mapy-cz-api-key"] = ""
@@ -256,3 +264,6 @@ class TestCreateMapWithActivitiesEndToEnd:
         assert "noUiSlider" in html or "nouislider" in html
         # the map variable was found and script injected (no error early-return)
         assert "L.map" in html
+        # Mapy.com attribution logo control is wired in (required by their terms)
+        assert "initializeMapyAttribution" in html
+        assert "api.mapy.com/img/api/logo.svg" in html

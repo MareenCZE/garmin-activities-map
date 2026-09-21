@@ -102,6 +102,23 @@ Pure client JS drives the interactivity:
   duration + Garmin Connect link), and does hover/popup highlighting (bright green).
 - A **noUiSlider date-range slider** filters visible tracks by date; a hamburger **toggle
   control** shows/hides zoom, layer, and slider controls.
+- A **Mapy.com attribution control** (`initializeMapyAttribution`) adds the clickable
+  Mapy.com logo + copyright link their terms require, shown only while a Mapy.cz base
+  layer is active (detected by the active tile layer's URL).
+
+### Tile layers & attribution (`mapgenerator.create_map` / `build_tile_layer`)
+Base map tiles come from `[map-tiles].tiles` in config. `build_tile_layer` dispatches
+per provider:
+- **OpenStreetMap** — Folium built-in shorthand (OSM's own tile servers + default OSM
+  attribution).
+- **CARTO** (`cartodbdark_matter`/`cartodbpositron`/`cartodbvoyager`) — needs a
+  `carto-api-key` (watermarked without one, since 2026); built as an explicit keyed URL
+  and credited to CARTO + OpenStreetMap with links.
+- **Mapy.cz** (`mapy.cz-*`) — needs a `mapy-cz-api-key`; skipped entirely if absent.
+  Carries the "Seznam.cz a.s. and others" copyright; the logo is added client-side (above).
+
+Attribution for each provider is a terms-of-service requirement — the Leaflet attribution
+control is left enabled and the strings/logo must not be stripped.
 
 ## Notable implementation details
 

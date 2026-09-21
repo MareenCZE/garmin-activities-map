@@ -142,8 +142,10 @@ def _carto_tile_layer(tile_key, display_name):
 
     variant = CARTO_TILE_VARIANTS[tile_key]
     tile_url = f"https://basemaps.cartocdn.com/{variant}/{{z}}/{{x}}/{{y}}.png?key={api_key}"
-    return folium.TileLayer(tiles=tile_url, name=display_name,
-                            attr='© OpenStreetMap contributors © CARTO',
+    # CARTO's terms require crediting both OpenStreetMap and CARTO with links.
+    attribution = ('© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, '
+                   '© <a href="https://carto.com/attributions">CARTO</a>')
+    return folium.TileLayer(tiles=tile_url, name=display_name, attr=attribution,
                             overlay=False, control=True, max_zoom=20)
 
 
@@ -156,8 +158,10 @@ def _mapy_cz_tile_layer(tile_key, display_name):
 
     variant = _mapy_cz_variant(tile_key)
     tile_url = f"https://api.mapy.cz/v1/maptiles/{variant}/256/{{z}}/{{x}}/{{y}}?apikey={api_key}"
-    return folium.TileLayer(tiles=tile_url, name=display_name,
-                            attr='© Seznam.cz, a.s, © OpenStreetMap',
+    # Mapy.com requires this exact copyright text with a link. Their logo is a
+    # separate visibility requirement handled client-side (initializeMapyAttribution).
+    attribution = '© <a href="https://api.mapy.com/copyright">Seznam.cz a.s. and others</a>'
+    return folium.TileLayer(tiles=tile_url, name=display_name, attr=attribution,
                             overlay=False, control=True, max_zoom=18)
 
 
