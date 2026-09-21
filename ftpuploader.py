@@ -49,15 +49,15 @@ def get_remote_file_info(ftp, filename):
 
 
 def should_upload_file(local_file_path, remote_file_info):
-    """Determine if a local file should be uploaded based on size and modification time"""
-    if remote_file_info is None:
-        # Remote file doesn't exist, upload it
+    """Determine if a local file should be uploaded based on size"""
+    # Size check does not work for manifest.json - it changes when there is a new activity, but its size usually remains the same
+    if remote_file_info is None or local_file_path.name == 'manifest.json':
         return True
 
     local_stat = local_file_path.stat()
     local_size = local_stat.st_size
 
-    # Upload if size differs or local file is newer
+    # Upload if size differs
     size_differs = local_size != remote_file_info['size']
 
     if size_differs:
@@ -145,7 +145,7 @@ def upload_map_with_data_to_ftp_incremental(html_filename: str):
                     files_uploaded += 1
                     total_size_uploaded += json_file.stat().st_size
                 else:
-                    logger.debug(f"JSON file {json_file.name} is up to date, skipping")
+                    logger.info(f"JSON file {json_file.name} is up to date, skipping")
                     files_skipped += 1
 
         # Summary
