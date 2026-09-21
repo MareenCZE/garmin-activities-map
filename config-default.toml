@@ -44,6 +44,10 @@ zoom-start = 8
 # If you want to use map tiles from Mapy.cz, put your personal API key as an override in config-local.toml.
 # See https://developer.mapy.cz/en/rest-api-mapy-cz/api-key/
 mapy-cz-api-key = ""
+# CARTO map tiles (the "Dark" and "Light" backgrounds below) require an API key since 2026. Without a key the tiles are
+# served with an "API KEY REQUIRED" watermark. Put your personal API key as an override in config-local.toml.
+# Get a free key (5 million tile requests / month) at https://carto.com/basemaps/apikey/
+carto-api-key = ""
 # Here you can customize which tiles are available on the map. You can switch between the listed ones when viewing the page.
 # You can use whatever tiles are supported by Folium - see examples on https://xyzservices.readthedocs.io/en/stable/gallery.html.
 # You may need to find the proper value to use for the tiles parameter. Name is your custom name to show in the map control.

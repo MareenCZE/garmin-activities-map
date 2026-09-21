@@ -8,6 +8,13 @@ import folium.plugins
 
 from common import logger, config
 
+# Folium/xyzservices CARTO shorthand -> CARTO raster basemap variant path used in the tile URL
+CARTO_TILE_VARIANTS = {
+    'cartodbpositron': 'light_all',
+    'cartodbdark_matter': 'dark_all',
+    'cartodbvoyager': 'rastertiles/voyager',
+}
+
 
 class TypeMapping:
     def __init__(self, name: str, color: str, type_keys: List[str], show_on_load: bool):
@@ -83,8 +90,34 @@ def create_map(center):
         tile_name = tile['tiles']
         display_name = tile['name']
 
+        # Handle CARTO tiles - they require an API key since 2026. Without a key the tiles get an
+        # "API KEY REQUIRED" watermark, and the Folium shorthand has no slot for a key, so build an explicit URL.
+        if tile_name in CARTO_TILE_VARIANTS:
+            api_key = config['map-tiles'].get('carto-api-key', '')
+            if api_key:
+                variant = CARTO_TILE_VARIANTS[tile_name]
+                tile_url = f"https://basemaps.cartocdn.com/{variant}/{{z}}/{{x}}/{{y}}.png?key={api_key}"
+                logger.debug(f"Adding CARTO tile layer: {display_name}")
+                folium.TileLayer(
+                    tiles=tile_url,
+                    name=display_name,
+                    attr='© OpenStreetMap contributors © CARTO',
+                    overlay=False,
+                    control=True,
+                    max_zoom=20
+                ).add_to(activities_map)
+            else:
+                logger.warning(f"CARTO API key not configured. '{display_name}' tiles will be watermarked. "
+                               f"Set carto-api-key in config-local.toml [map-tiles] section.")
+                folium.TileLayer(
+                    tiles=tile_name,
+                    name=display_name,
+                    overlay=False,
+                    control=True
+                ).add_to(activities_map)
+
         # Handle built-in Folium tiles
-        if tile_name in ['OpenStreetMap', 'cartodbdark_matter', 'cartodbpositron']:
+        elif tile_name in ['OpenStreetMap']:
             logger.debug(f"Adding built-in tile layer: {display_name}")
             folium.TileLayer(
                 tiles=tile_name,
