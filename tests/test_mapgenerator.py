@@ -159,6 +159,69 @@ class TestCartoTiles:
         assert mapgenerator.CARTO_TILE_VARIANTS["cartodbdark_matter"] == "dark_all"
 
 
+class TestBuildTileLayer:
+    def test_openstreetmap_builtin(self, config):
+        layer = mapgenerator.build_tile_layer("OpenStreetMap", "OSM")
+        assert layer is not None
+        assert layer.layer_name == "OSM"
+        # Folium expands the shorthand into the OSM tile URL
+        assert "openstreetmap.org" in layer.tiles
+
+    def test_unknown_source_passed_through_with_attribution(self, config):
+        layer = mapgenerator.build_tile_layer("https://tiles/{z}/{x}/{y}.png", "Custom")
+        assert layer.tiles == "https://tiles/{z}/{x}/{y}.png"
+        assert "OpenStreetMap" in layer.options["attribution"]
+
+    def test_carto_with_key_builds_explicit_url(self, config):
+        config["map-tiles"]["carto-api-key"] = "KEY42"
+        layer = mapgenerator.build_tile_layer("cartodbdark_matter", "Dark")
+        assert "basemaps.cartocdn.com/dark_all/" in layer.tiles
+        assert "key=KEY42" in layer.tiles
+
+    def test_carto_without_key_falls_back_to_watermarked_shorthand(self, config):
+        config["map-tiles"]["carto-api-key"] = ""
+        layer = mapgenerator.build_tile_layer("cartodbpositron", "Light")
+        assert layer is not None
+        # falls back to Folium's shorthand: CARTO URL but no explicit key param
+        assert "key=" not in layer.tiles
+
+    def test_mapy_cz_with_key_builds_url(self, config):
+        config["map-tiles"]["mapy-cz-api-key"] = "MKEY"
+        layer = mapgenerator.build_tile_layer("mapy.cz-winter", "Winter")
+        assert "api.mapy.cz/v1/maptiles/winter/" in layer.tiles
+        assert "apikey=MKEY" in layer.tiles
+
+    def test_mapy_cz_without_key_is_skipped(self, config):
+        config["map-tiles"]["mapy-cz-api-key"] = ""
+        assert mapgenerator.build_tile_layer("mapy.cz-outdoor", "Outdoor") is None
+
+    @pytest.mark.parametrize("tile_key,expected", [
+        ("mapy.cz-winter", "winter"),
+        ("mapy.cz-outdoor", "outdoor"),
+        ("mapy.cz-base", "basic"),
+        ("mapy.cz", "basic"),
+        ("mapy.cz-somethingelse", "basic"),
+    ])
+    def test_mapy_cz_variant_resolution(self, tile_key, expected):
+        assert mapgenerator._mapy_cz_variant(tile_key) == expected
+
+
+class TestCreateMapTileSelection:
+    def test_skips_keyless_mapy_but_keeps_others(self, config):
+        import folium
+        config["map-tiles"]["tiles"] = [
+            {"tiles": "OpenStreetMap", "name": "OSM"},
+            {"tiles": "mapy.cz-winter", "name": "Winter"},  # no key -> skipped
+        ]
+        config["map-tiles"]["mapy-cz-api-key"] = ""
+        config["map-tiles"]["zoom-start"] = 8
+        m = mapgenerator.create_map([48.0, 16.0])
+
+        tile_names = [c.layer_name for c in m._children.values()
+                      if isinstance(c, folium.TileLayer)]
+        assert tile_names == ["OSM"]  # keyless Mapy.cz layer was skipped
+
+
 class TestCreateMapSmoke:
     def test_create_map_builds_with_osm_tile(self, config):
         config["map-tiles"]["tiles"] = [{"tiles": "OpenStreetMap", "name": "OSM"}]

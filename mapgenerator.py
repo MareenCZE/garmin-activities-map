@@ -76,103 +76,85 @@ def calculate_map_center(activities):
 
 
 def create_map(center):
-    """Create a basic Folium map"""
-    tiles = config['map-tiles']['tiles']
-
+    """Create a Folium map with the tile layers configured in [map-tiles].tiles."""
     activities_map = folium.Map(
         location=center,
         zoom_start=config['map-tiles']['zoom-start'],
         tiles=None
     )
 
-    # Add tile layers
-    for tile in tiles:
-        tile_name = tile['tiles']
-        display_name = tile['name']
-
-        # Handle CARTO tiles - they require an API key since 2026. Without a key the tiles get an
-        # "API KEY REQUIRED" watermark, and the Folium shorthand has no slot for a key, so build an explicit URL.
-        if tile_name in CARTO_TILE_VARIANTS:
-            api_key = config['map-tiles'].get('carto-api-key', '')
-            if api_key:
-                variant = CARTO_TILE_VARIANTS[tile_name]
-                tile_url = f"https://basemaps.cartocdn.com/{variant}/{{z}}/{{x}}/{{y}}.png?key={api_key}"
-                logger.debug(f"Adding CARTO tile layer: {display_name}")
-                folium.TileLayer(
-                    tiles=tile_url,
-                    name=display_name,
-                    attr='© OpenStreetMap contributors © CARTO',
-                    overlay=False,
-                    control=True,
-                    max_zoom=20
-                ).add_to(activities_map)
-            else:
-                logger.warning(f"CARTO API key not configured. '{display_name}' tiles will be watermarked. "
-                               f"Set carto-api-key in config-local.toml [map-tiles] section.")
-                folium.TileLayer(
-                    tiles=tile_name,
-                    name=display_name,
-                    overlay=False,
-                    control=True
-                ).add_to(activities_map)
-
-        # Handle built-in Folium tiles
-        elif tile_name in ['OpenStreetMap']:
-            logger.debug(f"Adding built-in tile layer: {display_name}")
-            folium.TileLayer(
-                tiles=tile_name,
-                name=display_name,
-                overlay=False,
-                control=True
-            ).add_to(activities_map)
-
-        # Handle custom Mapy.cz tiles
-        elif tile_name.startswith('mapy.cz'):
-            api_key = config['map-tiles'].get('mapy-cz-api-key', '')
-            if api_key:
-                logger.debug(f"Adding Mapy.cz tile layer: {display_name}")
-                logger.debug(f"Using API key: {api_key[:10]}...{api_key[-4:]}")  # Log partial key for debugging
-
-                # Use correct Mapy.cz API v1 URL format
-                if 'winter' in tile_name:
-                    tile_url = f"https://api.mapy.cz/v1/maptiles/winter/256/{{z}}/{{x}}/{{y}}?apikey={api_key}"
-                elif 'outdoor' in tile_name:
-                    tile_url = f"https://api.mapy.cz/v1/maptiles/outdoor/256/{{z}}/{{x}}/{{y}}?apikey={api_key}"
-                elif 'base' in tile_name or tile_name == 'mapy.cz':
-                    tile_url = f"https://api.mapy.cz/v1/maptiles/basic/256/{{z}}/{{x}}/{{y}}?apikey={api_key}"
-                else:
-                    # Default to basic map
-                    tile_url = f"https://api.mapy.cz/v1/maptiles/basic/256/{{z}}/{{x}}/{{y}}?apikey={api_key}"
-
-                logger.debug(f"Mapy.cz tile URL template: {tile_url.replace(api_key, 'API_KEY_HIDDEN')}")
-
-                try:
-                    folium.TileLayer(
-                        tiles=tile_url,
-                        name=display_name,
-                        attr='© Seznam.cz, a.s, © OpenStreetMap',
-                        overlay=False,
-                        control=True,
-                        max_zoom=18
-                    ).add_to(activities_map)
-                    logger.debug(f"Successfully added Mapy.cz layer: {display_name}")
-                except Exception as e:
-                    logger.error(f"Error adding Mapy.cz layer {display_name}: {e}")
-            else:
-                logger.warning(f"Mapy.cz API key not configured, skipping {display_name}")
-
-        # Handle other custom tiles with default attribution
-        else:
-            logger.debug(f"Adding custom tile layer: {display_name}")
-            folium.TileLayer(
-                tiles=tile_name,
-                name=display_name,
-                attr='© OpenStreetMap contributors',
-                overlay=False,
-                control=True
-            ).add_to(activities_map)
+    for tile in config['map-tiles']['tiles']:
+        layer = build_tile_layer(tile['tiles'], tile['name'])
+        if layer is not None:
+            layer.add_to(activities_map)
+            logger.debug(f"Added tile layer: {tile['name']}")
 
     return activities_map
+
+
+def build_tile_layer(tile_key, display_name):
+    """Resolve one [map-tiles].tiles entry into a folium.TileLayer.
+
+    Returns None when the layer cannot be built (e.g. a keyed provider without a
+    configured API key) so the caller can simply skip it.
+    """
+    if tile_key in CARTO_TILE_VARIANTS:
+        return _carto_tile_layer(tile_key, display_name)
+
+    if tile_key.startswith('mapy.cz'):
+        return _mapy_cz_tile_layer(tile_key, display_name)
+
+    if tile_key == 'OpenStreetMap':
+        # Built-in Folium tile source - no attribution needed.
+        return folium.TileLayer(tiles=tile_key, name=display_name, overlay=False, control=True)
+
+    # Anything else is passed straight through to Folium/xyzservices.
+    return folium.TileLayer(tiles=tile_key, name=display_name,
+                            attr='© OpenStreetMap contributors', overlay=False, control=True)
+
+
+def _carto_tile_layer(tile_key, display_name):
+    """Build a CARTO basemap layer.
+
+    CARTO raster basemaps require an API key since 2026 - without one the tiles
+    come back with an "API KEY REQUIRED" watermark. Folium's shorthand has no
+    slot for a key, so build an explicit tile URL when a key is configured and
+    otherwise fall back to the (watermarked) shorthand.
+    """
+    api_key = config['map-tiles'].get('carto-api-key', '')
+    if not api_key:
+        logger.warning(f"CARTO API key not configured. '{display_name}' tiles will be watermarked. "
+                       f"Set carto-api-key in config-local.toml [map-tiles] section.")
+        return folium.TileLayer(tiles=tile_key, name=display_name, overlay=False, control=True)
+
+    variant = CARTO_TILE_VARIANTS[tile_key]
+    tile_url = f"https://basemaps.cartocdn.com/{variant}/{{z}}/{{x}}/{{y}}.png?key={api_key}"
+    return folium.TileLayer(tiles=tile_url, name=display_name,
+                            attr='© OpenStreetMap contributors © CARTO',
+                            overlay=False, control=True, max_zoom=20)
+
+
+def _mapy_cz_tile_layer(tile_key, display_name):
+    """Build a Mapy.cz layer, or None when no Mapy.cz API key is configured."""
+    api_key = config['map-tiles'].get('mapy-cz-api-key', '')
+    if not api_key:
+        logger.warning(f"Mapy.cz API key not configured, skipping {display_name}")
+        return None
+
+    variant = _mapy_cz_variant(tile_key)
+    tile_url = f"https://api.mapy.cz/v1/maptiles/{variant}/256/{{z}}/{{x}}/{{y}}?apikey={api_key}"
+    return folium.TileLayer(tiles=tile_url, name=display_name,
+                            attr='© Seznam.cz, a.s, © OpenStreetMap',
+                            overlay=False, control=True, max_zoom=18)
+
+
+def _mapy_cz_variant(tile_key):
+    """Map a 'mapy.cz-*' config key to a Mapy.cz v1 tileset name (default 'basic')."""
+    if 'winter' in tile_key:
+        return 'winter'
+    if 'outdoor' in tile_key:
+        return 'outdoor'
+    return 'basic'  # 'mapy.cz-base', bare 'mapy.cz', or any unrecognized suffix
 
 
 def create_activity_popup_html(activity):
