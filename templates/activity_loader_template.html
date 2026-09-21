@@ -432,6 +432,8 @@ function setupMapEventListeners() {
         if (categoryInfo && categoryInfo.activity_count > 0 && !activityData[categoryName]) {
             await loadCategoryData(categoryName, categoryInfo);
         }
+
+        refreshSelectionDialogIfOpen();
     });
 
     mapInstance.on('overlayremove', function(e) {
@@ -442,6 +444,8 @@ function setupMapEventListeners() {
             eventNameField: e && Object.prototype.hasOwnProperty.call(e, 'name') ? e.name : undefined,
             leafletLayerId: e && e.layer ? e.layer._leaflet_id : undefined
         });
+
+        refreshSelectionDialogIfOpen();
     });
 }
 
@@ -473,6 +477,8 @@ function filterActivitiesByDateRange() {
 
         console.log(`Added ${addedCount} filtered activities to map for ${categoryName}`);
     }
+
+    refreshSelectionDialogIfOpen();
 }
 
 function initializeDateRangeSlider() {
@@ -754,6 +760,7 @@ let areaSelectRectangle = null;    // the L.Rectangle currently on the map
 let areaSelectBounds = null;       // frozen bounds of the last completed rectangle
 let areaSelectMode = 'partial';    // 'partial' (any point inside) | 'full' (all points inside)
 let areaSelectButton = null;
+let selectionRefreshScheduled = false;
 
 const AREA_SELECT_NORMAL_STYLE = { weight: 2, opacity: 0.8 };
 const AREA_SELECT_HIGHLIGHT_STYLE = { color: '#00FF00', weight: 5, opacity: 1.0 };
@@ -879,6 +886,24 @@ function clearAreaSelection() {
 }
 
 // ---- The results dialog ----------------------------------------------------
+
+/**
+ * While the rectangle + dialog are up, keep the table in sync with the map when
+ * the date-range slider or the layer toggles change what's visible. Debounced via
+ * requestAnimationFrame so a slider drag (which fires continuously) rebuilds the
+ * dialog at most once per frame.
+ */
+function refreshSelectionDialogIfOpen() {
+    if (!areaSelectBounds || !document.getElementById('area-selection-dialog')) return;
+    if (selectionRefreshScheduled) return;
+    selectionRefreshScheduled = true;
+    requestAnimationFrame(function() {
+        selectionRefreshScheduled = false;
+        if (areaSelectBounds && document.getElementById('area-selection-dialog')) {
+            showSelectionDialog();
+        }
+    });
+}
 
 function showSelectionDialog() {
     const existing = document.getElementById('area-selection-dialog');

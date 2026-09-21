@@ -250,6 +250,71 @@ def test_button_in_zoom_bar_and_folds_with_hamburger(served_map):
             browser.close()
 
 
+def test_dialog_refreshes_on_layer_toggle(served_map):
+    """With the rectangle up, toggling a category re-runs the selection live."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page = browser.new_page()
+            page.goto(served_map)
+            _wait_loaded(page)
+            _drag_box_around_origin(page)
+
+            rows = page.locator("#area-selection-dialog .area-sel-row")
+            assert rows.count() == 2
+
+            # "Running" appears in both the layer control and the dialog breakdown;
+            # target the layer-control toggle specifically.
+            layer_toggle = page.locator(".leaflet-control-layers").get_by_text("Running", exact=True)
+
+            # Toggle Running off -> table empties (rectangle stays).
+            layer_toggle.click()
+            page.wait_for_function(
+                "() => document.querySelectorAll('#area-selection-dialog .area-sel-row').length === 0",
+                timeout=5000,
+            )
+            assert page.locator("#area-selection-dialog").count() == 1  # dialog still open
+
+            # Toggle it back on -> rows return.
+            layer_toggle.click()
+            page.wait_for_function(
+                "() => document.querySelectorAll('#area-selection-dialog .area-sel-row').length === 2",
+                timeout=5000,
+            )
+        finally:
+            browser.close()
+
+
+def test_dialog_refreshes_on_date_filter(served_map):
+    """With the rectangle up, narrowing the date range re-runs the selection live."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page = browser.new_page()
+            page.goto(served_map)
+            _wait_loaded(page)
+            _drag_box_around_origin(page)
+            assert page.locator("#area-selection-dialog .area-sel-row").count() == 2
+
+            # Narrow the range to exclude Bravo (2024-06-01); only Alpha remains.
+            page.evaluate(
+                "() => { currentDateRange = {start: '2024-01-01', end: '2024-05-15'};"
+                " filterActivitiesByDateRange(); }"
+            )
+            page.wait_for_function(
+                "() => document.querySelectorAll('#area-selection-dialog .area-sel-row').length === 1",
+                timeout=5000,
+            )
+            remaining = page.locator("#area-selection-dialog .area-sel-row span[title]").get_attribute("title")
+            assert remaining == "Alpha"
+        finally:
+            browser.close()
+
+
 def test_tool_absent_when_disabled(config, tmp_path):
     """With enable-area-selection = false the toolbar button is not added."""
     from playwright.sync_api import sync_playwright
