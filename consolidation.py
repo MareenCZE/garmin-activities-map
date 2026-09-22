@@ -352,13 +352,20 @@ def split_and_upload(api):
     return None
 
 
-# Main program
-api = init_api()
+def main():
+    # Main program
+    api = init_api()
 
-# Pick one function you want to process, comment out everything else
+    # Pick one function you want to process, comment out everything else
 
-# split_and_upload(api)
-# upload_manual_activities(api)
-# update_activity_type(api)
-# categorize_activities(api)
-get_activity_by_id(api, 15611628640)
+    # split_and_upload(api)
+    # upload_manual_activities(api)
+    # update_activity_type(api)
+    # categorize_activities(api)
+    get_activity_by_id(api, 15611628640)
+
+
+# Guard the entry point so the module can be imported (e.g. by tests) without
+# triggering a Garmin login. Run it as a script to actually do the work.
+if __name__ == "__main__":
+    main()

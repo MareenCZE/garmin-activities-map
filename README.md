@@ -110,6 +110,42 @@ If it is just one activity or so, you can work around it with a couple of manual
     REGENERATE_COORDINATES
 - revert everything to BAU
 
+## Testing
+
+Tests live under `tests/` and run with [pytest](https://pytest.org):
+
+```
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+Most tests are pure-Python and cover the download/storage/map-generation/upload
+pipeline. Two modules — `tests/test_browser_mapy.py` and
+`tests/test_browser_area_select.py` — are **browser tests**: they build a real
+map, serve it, and drive it in headless Chromium with
+[Playwright](https://playwright.dev/python/) to exercise the client-side
+JavaScript in `templates/activity_loader_template.html` (the Mapy.com
+attribution toggle and the area-selection tool). This is the only coverage the
+JavaScript gets, so it matters that they actually run.
+
+They are opt-in and **skip silently** unless both Playwright and a Chromium build
+are present. To enable them:
+
+```
+pip install -r requirements-dev.txt
+playwright install chromium
+python -m pytest tests/test_browser_area_select.py tests/test_browser_mapy.py
+```
+
+To check coverage:
+
+```
+coverage run -m pytest && coverage report -m
+```
+
+(`coverage` measures the Python side only; the browser tests report their own
+JS coverage indirectly by driving the page.)
+
 ## Licensing and attribution
 
 This tool is released under the [MIT license](LICENSE). The Python and JavaScript

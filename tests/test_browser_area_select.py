@@ -315,6 +315,73 @@ def test_dialog_refreshes_on_date_filter(served_map):
             browser.close()
 
 
+def test_activity_popup_shows_details_and_garmin_link(served_map):
+    """Clicking a track opens a popup with its stats and a Garmin Connect link.
+
+    Exercises createActivityPopupHtml + garminActivityLink, the one core piece of
+    map JS the other browser tests don't assert on.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page = browser.new_page()
+            page.goto(served_map)
+            _wait_loaded(page)
+
+            # Open Alpha's popup programmatically (deterministic vs. clicking a thin line).
+            page.evaluate(
+                """() => {
+                let target = null;
+                layerGroups['Running'].eachLayer(pl => {
+                    if (pl.activityData && pl.activityData.name === 'Alpha') target = pl;
+                });
+                target.openPopup();
+            }"""
+            )
+            popup = page.locator(".leaflet-popup-content")
+            popup.wait_for(timeout=10000)
+            text = popup.inner_text()
+            assert "Alpha" in text
+            assert "2024-05-01" in text          # date
+            assert "5" in text                    # distance (km)
+            assert "42min" in text                # 42.0 min formatted by createActivityPopupHtml
+            # Activity id links to Garmin Connect.
+            assert popup.locator("a[href*='connect.garmin.com']").count() == 1
+        finally:
+            browser.close()
+
+
+def test_parse_date_handles_iso_fallback_and_garbage(served_map):
+    """parseDate: valid ISO, YYYY-MM-DD fallback, and unparseable -> null."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page = browser.new_page()
+            page.goto(served_map)
+            _wait_loaded(page)
+
+            result = page.evaluate(
+                """() => ({
+                empty: parseDate('') === null,
+                iso: parseDate('2024-05-01') instanceof Date,
+                month: parseDate('2024-05-01').getMonth(),   // 0-based -> April=3? May=4
+                day: parseDate('2024-05-01').getDate(),
+                garbage: parseDate('not-a-date') === null,
+            })"""
+            )
+            assert result["empty"] is True
+            assert result["iso"] is True
+            assert result["month"] == 4      # May, 0-based
+            assert result["day"] == 1
+            assert result["garbage"] is True
+        finally:
+            browser.close()
+
+
 def test_tool_absent_when_disabled(config, tmp_path):
     """With enable-area-selection = false the toolbar button is not added."""
     from playwright.sync_api import sync_playwright

@@ -1,0 +1,13 @@
+# Development / test dependencies. Install on top of requirements.txt:
+#   pip install -r requirements-dev.txt
+#   playwright install chromium   # one-time browser download for the browser tests
+#
+# The browser tests (tests/test_browser_*.py) drive the generated map in headless
+# Chromium. They skip automatically if Playwright or its Chromium build is missing,
+# so the JavaScript in templates/activity_loader_template.html goes untested unless
+# these are installed. See the Testing section in README.md.
+-r requirements.txt
+
+pytest==8.2.0
+coverage==7.16.1
+playwright==1.63.0
