@@ -146,6 +146,23 @@ coverage run -m pytest && coverage report -m
 (`coverage` measures the Python side only; the browser tests report their own
 JS coverage indirectly by driving the page.)
 
+## Contributing: keep personal data out
+
+This repo is public, but your working copy holds personal data (`data/`,
+`output/`, `.auth/`, `config-local.toml`). A pre-commit hook in `.githooks/`
+rejects commits that contain those paths, GPS track files, tokens, encrypted
+passwords, Garmin account fields, e-mail addresses, precise coordinates, or any
+credential value from your `config-local.toml`. Enable it once per clone:
+
+```
+git config core.hooksPath .githooks
+```
+
+Add further private strings (your name, street…) to `.git/leak-guard-denylist`,
+one per line. `python3 .githooks/leak_guard.py --all` audits every tracked file.
+Test fixtures must use synthetic data: coordinates within 1° of (0, 0), with
+Garmin owner fields set to `null`.
+
 ## Licensing and attribution
 
 This tool is released under the [MIT license](LICENSE). The Python and JavaScript

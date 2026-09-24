@@ -1,0 +1,8 @@
+#!/bin/sh
+# Block personal data and secrets from reaching this public repo.
+# Enabled per clone with: git config core.hooksPath .githooks
+command -v python3 >/dev/null 2>&1 || {
+    echo "leak-guard: python3 not found; refusing to commit unchecked." >&2
+    exit 1
+}
+exec python3 "$(dirname "$0")/leak_guard.py"

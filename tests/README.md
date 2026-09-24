@@ -55,3 +55,10 @@ python -m pytest tests/test_browser_mapy.py
   incremental upload flow (mocked `ftplib.FTP`)
 - `test_browser_mapy.py` — headless-Chromium check of the Mapy.com logo toggle
   (opt-in; see above)
+- `test_leak_guard.py` — the `.githooks` pre-commit guard: realistic synthetic
+  Garmin artifacts are rejected and sanitized ones accepted, end-to-end commits in
+  a throwaway repo, a whole-repo audit, and (local only, skipped on a fresh clone)
+  a check that your real `data/`, `.auth/` and `config-local.toml` are all caught
+
+Fixtures must be synthetic: coordinates within 1° of (0, 0), Garmin owner fields
+`null`, no real names, IDs or tokens. The guard enforces this at commit time.

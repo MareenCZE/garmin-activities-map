@@ -42,7 +42,16 @@ polished app — a single user runs it by hand.
 ## Gotchas — read before editing
 
 - **Never commit `data/`, `output/`, `.auth/`, or `config-local.toml`** — all
-  git-ignored, all contain personal data or credentials.
+  git-ignored, all contain personal data or credentials. The repo is public.
+  `.githooks/pre-commit` (`leak_guard.py`, enabled via
+  `git config core.hooksPath .githooks`) enforces this plus content checks. When it
+  blocks a commit, fix the content — never bypass it (`--no-verify`, `git add -f`,
+  changing `core.hooksPath`), and add `leak-guard: allow` only for a real false
+  positive.
+- **Test fixtures and docs use synthetic data only**: coordinates within 1° of
+  (0, 0) ("Null Island"), Garmin owner fields `null`, made-up names, IDs and
+  tokens. Never copy values from `data/`, `.auth/`, or `config-local.toml` into
+  tests, docs, or commit messages — imitate the *shape* of real data, not its values.
 - The FTP password is Fernet-encrypted in config, but `CRYPTO_KEY` is hard-coded
   in `ftpuploader.py`: this is obfuscation, not security. Don't treat it as safe.
 - Incremental FTP upload detects changes by comparing file **size**, so

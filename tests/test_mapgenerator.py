@@ -68,10 +68,10 @@ class TestCalculateMapCenter:
 
 class TestResolveMapCenter:
     def test_uses_configured_center_point_when_set(self, storage_env, config):
-        config["map-tiles"]["center-point"] = [50.0755, 14.4378]
+        config["map-tiles"]["center-point"] = [0.0755, 0.4378]
         a = make_activity(storage, filename="a")
         a.coordinates = [[48.0, 16.0]]  # would otherwise average to here
-        assert mapgenerator.resolve_map_center([a]) == [50.0755, 14.4378]
+        assert mapgenerator.resolve_map_center([a]) == [0.0755, 0.4378]
 
     def test_falls_back_to_calculated_center_when_empty(self, storage_env, config):
         config["map-tiles"]["center-point"] = []

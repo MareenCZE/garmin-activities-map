@@ -52,8 +52,8 @@ class TestReadCoordinates:
     def test_rounds_to_configured_decimal_places(self, storage_env, config):
         config["activities"]["coords-decimal-places"] = 3
         path = storage_env.coords_dir / "c.csv"
-        write_coords_file(path, [[48.123456, 16.654321]])
-        assert storage.read_coordinates(str(path)) == [[48.123, 16.654]]
+        write_coords_file(path, [[0.123456, 0.654321]])
+        assert storage.read_coordinates(str(path)) == [[0.123, 0.654]]
 
     def test_empty_file_yields_empty_list(self, storage_env):
         path = storage_env.coords_dir / "c.csv"

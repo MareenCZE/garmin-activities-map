@@ -37,7 +37,7 @@ remote-filename = "index.html"
 # #####################################################################
 [map-tiles]
 # Opening center point of the map. Leave empty if you want to use a calculated middle point of all activities.
-# You can force using a specific point by putting an override into config-local.toml, e.g. [50.0755, 14.4378] for Prague.
+# You can force using a specific point by putting an override into config-local.toml, e.g. [50.08, 14.44] for Prague.
 center-point = []
 # Initial zoom of the map. Default is 8.
 zoom-start = 8

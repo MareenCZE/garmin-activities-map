@@ -1,0 +1,5 @@
+#!/bin/sh
+# Strip the "Claude-Session:" trailer that Claude Code appends to commit messages.
+# Keeps everything else (including Co-Authored-By) intact.
+# -i.bak works with both GNU and BSD (macOS) sed.
+sed -i.bak '/^Claude-Session:/d' "$1" && rm -f "$1.bak"
