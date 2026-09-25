@@ -256,3 +256,61 @@ def test_closing_list_keeps_highlight_of_open_popup(served_map, browser, touch):
     # Closing the popup then drops the highlight as usual.
     page.evaluate("() => mapInstance.closePopup()")
     assert _track_weight(page, "Twin B") == 2
+
+
+def _view(page):
+    return page.evaluate(
+        "() => { const c = mapInstance.getCenter();"
+        " return [mapInstance.getZoom(), c.lat, c.lng]; }")
+
+
+def _open_twin_list(page):
+    pt = _page_point(page, TWIN_LAT, 0.005, dy=4)
+    page.touchscreen.tap(pt["x"], pt["y"])
+    dialog = page.locator("#area-selection-dialog")
+    dialog.wait_for(timeout=5000)
+    return dialog
+
+
+def test_list_row_opens_popup_without_moving_map(served_map, browser):
+    page = _open(browser, served_map, touch=True)
+    dialog = _open_twin_list(page)
+    before = _view(page)
+    box = dialog.locator(".area-sel-row").nth(1).bounding_box()  # Twin A
+    page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    assert "Twin A" in _popup_text(page)
+    page.wait_for_timeout(300)  # let any pan/zoom animation run
+    assert _view(page) == pytest.approx(before, abs=1e-9)
+
+
+@pytest.mark.parametrize("where", ["track", "empty"])
+def test_next_map_tap_closes_tap_list(served_map, browser, where):
+    page = _open(browser, served_map, touch=True)
+    _open_twin_list(page)
+    lat = SOLO_LAT if where == "track" else 0.0
+    pt = _page_point(page, lat, 0.005)
+    page.touchscreen.tap(pt["x"], pt["y"])
+    if where == "track":
+        assert "Solo" in _popup_text(page)
+    page.wait_for_function(
+        "() => !document.getElementById('area-selection-dialog')", timeout=5000)
+    assert page.evaluate("() => tapSelectLatLng") is None
+
+
+def test_single_match_tap_keeps_rectangle_list(served_map, browser):
+    page = _open(browser, served_map, touch=False)
+    start = _page_point(page, SOLO_LAT + 0.005, -0.002)
+    end = _page_point(page, TWIN_LAT - 0.005, 0.012)
+    page.click(".leaflet-control-area-select")
+    page.mouse.move(start["x"], start["y"])
+    page.mouse.down()
+    page.mouse.move(end["x"], end["y"], steps=8)
+    page.mouse.up()
+    dialog = page.locator("#area-selection-dialog")
+    dialog.wait_for(timeout=5000)
+
+    page.wait_for_timeout(600)  # past the post-drag click guard
+    pt = _page_point(page, SOLO_LAT, 0.005)
+    page.mouse.click(pt["x"], pt["y"])
+    assert "Solo" in _popup_text(page)
+    assert "Selection" in dialog.inner_text()

@@ -898,6 +898,20 @@ function clearSelection() {
 
 // ---- The results dialog ----------------------------------------------------
 
+/**
+ * Where a list row opens its activity's popup without moving the map: at the
+ * tap for a tap list, or at the track's first point inside the rectangle.
+ * Undefined falls back to Leaflet's default anchor.
+ */
+function selectionPopupLatLng(item) {
+    if (tapSelectLatLng) return tapSelectLatLng;
+    if (areaSelectBounds) {
+        const inside = item.activity.coordinates.find(c => areaSelectBounds.contains(c));
+        if (inside) return L.latLng(inside);
+    }
+    return undefined;
+}
+
 function selectionActive() {
     return !!(areaSelectBounds || tapSelectLatLng);
 }
@@ -1036,7 +1050,8 @@ function showSelectionDialog() {
         };
     });
 
-    // Row interactions: hover highlights the track, click zooms to it + opens popup.
+    // Row interactions: hover highlights the track, click opens its popup. The
+    // view is left as it is; the popup opens where the selection was made.
     dialog.querySelectorAll('.area-sel-row').forEach(function(row) {
         const item = rowItems[parseInt(row.dataset.idx, 10)];
         if (!item || !item.polyline) return;
@@ -1059,8 +1074,7 @@ function showSelectionDialog() {
         });
         row.addEventListener('click', function(e) {
             if (e.target.tagName === 'A') return; // let the Garmin link work normally
-            mapInstance.fitBounds(item.polyline.getBounds(), { maxZoom: 14 });
-            item.polyline.openPopup();
+            item.polyline.openPopup(selectionPopupLatLng(item));
         });
     });
 }
@@ -1176,6 +1190,9 @@ function onMapTap(e) {
     // Leave clicks alone while the area tool is armed, and ignore the click the
     // browser fires at the end of a rectangle drag.
     if (areaSelectActive || Date.now() - areaSelectEndedAt < 500) return;
+    // A new tap replaces the previous tap's list. A rectangle selection stays
+    // up: it is a deliberate tool, closed with its own button.
+    if (tapSelectLatLng) clearSelection();
 
     const tolerancePx = tapTolerancePx(e);
     const matches = computeTapSelection(e.latlng, tolerancePx);
