@@ -111,8 +111,9 @@ Pure client JS drives the interactivity:
   on the map*, so it honours the active date-range and activity-type filters for free, and while
   the box stays up it re-runs the selection live (debounced) when those filters change.
 - A **Mapy.com attribution control** (`initializeMapyAttribution`) adds the clickable
-  Mapy.com logo + copyright link their terms require, shown only while a Mapy.com base
-  layer is active (detected by the active tile layer's URL).
+  Mapy.com logo their terms require (30 px, their minimum on-map height), shown only
+  while a Mapy.com base layer is active (detected by the active tile layer's URL). The
+  copyright link is carried by the tile layer's Leaflet attribution, not repeated here.
 
 ### Tile layers & attribution (`mapgenerator.create_map` / `build_tile_layer`)
 Base map tiles come from `[map-tiles].tiles` in config. `build_tile_layer` dispatches

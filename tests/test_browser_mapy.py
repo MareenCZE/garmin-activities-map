@@ -103,6 +103,17 @@ def test_mapy_logo_toggles_with_active_base_layer(served_map):
                 == "https://api.mapy.com/img/api/logo.svg"
             assert page.eval_on_selector(".mapy-attribution a", "el => el.getAttribute('href')") \
                 == "https://mapy.com/"
+            # the logo sits in the bottom-right corner, directly above the attribution control
+            assert page.evaluate(
+                "document.querySelector('.mapy-attribution').nextElementSibling"
+                ".classList.contains('leaflet-control-attribution')")
+            assert page.eval_on_selector(".mapy-attribution", "el => !!el.closest('.leaflet-bottom.leaflet-right')")
+            # the copyright lives in Leaflet's attribution control only - not duplicated
+            assert page.evaluate(
+                "document.body.innerText.split('Seznam.cz a.s. and others').length - 1") == 1
+            assert page.eval_on_selector(
+                ".leaflet-control-attribution a[href='https://api.mapy.com/copyright']",
+                "el => el.textContent") == "Seznam.cz a.s. and others"
 
             # switch back to OSM -> logo hidden again
             page.get_by_text("OSM", exact=True).click()

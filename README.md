@@ -186,9 +186,10 @@ remove them**:
 * **Mapy.com / Seznam.cz** (Mapy.com backgrounds, formerly Mapy.cz) - requires your
   own Mapy.com API key and, per
   [their terms](https://developer.mapy.com/rest-api-mapy-cz/atribution/), a visible,
-  clickable Mapy.com logo plus the "Seznam.cz a.s. and others" copyright while a
-  Mapy.com layer is active. Both are rendered automatically and shown only when a
-  Mapy.com background is selected.
+  clickable Mapy.com logo (at least 30 px high) plus the "Seznam.cz a.s. and others"
+  copyright while a Mapy.com layer is active. The logo sits in the bottom-right corner
+  just above the map's attribution control, which carries the copyright; both are
+  rendered automatically and shown only when a Mapy.com background is selected.
 
 ## Links
 
@@ -217,7 +218,6 @@ remove them**:
 
 * mobile: picking an activity is fiddly, it often takes several taps to hit the line
 * mobile: the rectangle (area) selection seems unusable, or at least there is no obvious way to use it
-* the Seznam.cz attribution is shown twice, once is enough; can the Mapy.com logo be smaller?
 * is the "tap to reload" button needed, or can the reload happen automatically?
 * overlapping activities: many activities repeat the same track or overlap a lot, so a click/tap
   rarely picks the one you want. The click/tap could instead list all activities whose lines pass

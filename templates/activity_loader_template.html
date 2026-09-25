@@ -683,8 +683,9 @@ function toggleMapControls() {
 /**
  * Mapy.com (Seznam) requires a visible, clickable logo above the map plus a
  * copyright link whenever their tiles are shown. Leaflet's corner attribution
- * carries the copyright text; this adds the required logo and shows it only
- * while a Mapy.com tile layer is the active base map.
+ * carries the copyright text (don't repeat it here); this adds the required
+ * logo and shows it only while a Mapy.com tile layer is the active base map.
+ * The logo is already at the terms' minimum on-map height (30px) - don't shrink it.
  * See https://developer.mapy.com/rest-api-mapy-cz/atribution/
  */
 function initializeMapyAttribution() {
@@ -695,27 +696,24 @@ function initializeMapyAttribution() {
         .mapy-attribution {
             display: none;
             align-items: center;
-            gap: 6px;
             background: rgba(255, 255, 255, 0.85);
             padding: 3px 6px;
             border-radius: 4px;
-            font: 11px/1.2 Arial, sans-serif;
             box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
         }
+        .leaflet-bottom .mapy-attribution { margin-bottom: 4px; }
         .mapy-attribution img { display: block; height: 30px; }
-        .mapy-attribution a { color: #0055ff; text-decoration: none; }
     `;
     document.head.appendChild(style);
 
+    // Bottom corners stack upwards, so this lands just above Leaflet's attribution.
     const MapyControl = L.Control.extend({
-        options: { position: 'bottomleft' },
+        options: { position: 'bottomright' },
         onAdd: function() {
             const div = L.DomUtil.create('div', 'mapy-attribution');
             div.innerHTML =
                 '<a href="https://mapy.com/" target="_blank" rel="noopener">' +
-                '<img src="https://api.mapy.com/img/api/logo.svg" alt="Mapy.com"></a>' +
-                '<span>&copy; <a href="https://api.mapy.com/copyright" target="_blank" rel="noopener">' +
-                'Seznam.cz a.s. and others</a></span>';
+                '<img src="https://api.mapy.com/img/api/logo.svg" alt="Mapy.com"></a>';
             L.DomEvent.disableClickPropagation(div);
             return div;
         }
