@@ -181,6 +181,41 @@ def test_tap_on_overlapping_tracks_lists_them(served_map, browser):
     assert page.evaluate("() => tapSelectLatLng") is None
 
 
+def _topmost_track(page):
+    """Name of the track drawn last, i.e. on top of the others."""
+    return page.evaluate(
+        """() => {
+        const paths = [...document.querySelectorAll('.leaflet-overlay-pane path')];
+        const top = paths[paths.length - 1];
+        let name = null;
+        findLayerByName('Running').eachLayer(pl => {
+            if (pl._path === top) name = pl.activityData.name;
+        });
+        return name;
+    }"""
+    )
+
+
+def test_track_picked_from_list_stays_on_top(served_map, browser):
+    page = _open(browser, served_map, touch=False)
+    pt = _page_point(page, TWIN_LAT, 0.005)
+    page.mouse.click(pt["x"], pt["y"])
+    dialog = page.locator("#area-selection-dialog")
+    dialog.wait_for(timeout=5000)
+
+    rows = dialog.locator(".area-sel-row")
+    rows.nth(1).click()  # Twin A (newest first)
+    assert "Twin A" in _popup_text(page)
+    rows.nth(0).hover()  # hovering Twin B raises it over Twin A...
+    assert _topmost_track(page) == "Twin B"
+
+    page.hover("#area-sel-close")  # ...until the pointer leaves its row
+    assert _topmost_track(page) == "Twin A"
+    page.click("#area-sel-close")
+    assert _topmost_track(page) == "Twin A"
+    assert page.evaluate("() => openPopupTrack.activityData.name") == "Twin A"
+
+
 def test_tap_on_empty_map_does_nothing(served_map, browser):
     page = _open(browser, served_map, touch=True)
     pt = _page_point(page, 0.0, 0.005)  # midway between the tracks, ~116 px from each

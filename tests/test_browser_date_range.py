@@ -44,16 +44,17 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def _make_track(activity_id, name, lat, date):
+def _make_track(activity_id, name, lat, date, activity_type="running"):
     a = storage.Activity(activity_id, 5.0, 42.0, date, "07:30",
-                          f"f{activity_id}", True, "running", name)
+                          f"f{activity_id}", True, activity_type, name)
     a.coordinates = [[lat, 0.000], [lat, 0.010]]
     return a
 
 
 @pytest.fixture
 def served_map(config, tmp_path):
-    """Four running tracks near Null Island, spread over 2024 and 2025."""
+    """Four running tracks near Null Island, spread over 2024 and 2025, plus two
+    inline tracks whose category is hidden (and so not loaded) at start."""
     config["map-tiles"]["tiles"] = [{"tiles": "OpenStreetMap", "name": "OSM"}]
     config["map-tiles"]["carto-api-key"] = ""
     config["map-tiles"]["mapy-com-api-key"] = ""
@@ -66,6 +67,8 @@ def served_map(config, tmp_path):
         _make_track(2, "New Year's Eve", 0.002, "2024-12-31"),
         _make_track(3, "New Year", 0.004, "2025-01-01"),
         _make_track(4, "June", 0.006, "2025-06-15"),
+        _make_track(5, "Inline 2024", 0.008, "2024-07-01", "inline_skating"),
+        _make_track(6, "Inline 2025", 0.010, "2025-05-01", "inline_skating"),
     ]
     out_html = tmp_path / "activities_map.html"
     mapgenerator.create_map_with_activities(tracks, str(out_html))
@@ -108,12 +111,12 @@ def _open(context, url):
     return page
 
 
-def _state(page):
-    """What the panel shows, and which tracks are on the map."""
+def _state(page, category="Running"):
+    """What the panel shows, and which tracks of a category are on the map."""
     return page.evaluate(
-        """() => {
+        """(category) => {
         const names = [];
-        findLayerByName('Running').eachLayer(pl => names.push(pl.activityData.name));
+        findLayerByName(category).eachLayer(pl => names.push(pl.activityData.name));
         return {
             preset: document.getElementById('date-range-preset').value,
             start: document.getElementById('date-range-start').value,
@@ -121,7 +124,8 @@ def _state(page):
             slider: dateSlider.noUiSlider.get().map(v => dayToIsoDate(Math.round(+v))),
             shown: names.sort(),
         };
-    }"""
+    }""",
+        category,
     )
 
 
@@ -270,3 +274,13 @@ def test_preset_gets_its_own_line_when_too_narrow(served_map, context):
     page.wait_for_timeout(100)
     b = _date_row_boxes(page)
     assert abs(b["preset"]["y"] - b["start"]["y"]) < 5
+
+
+def test_type_added_later_respects_the_range(served_map, context):
+    page = _open(context, served_map)
+    page.select_option("#date-range-preset", "this-year")
+    # Inline is off at start, so its data is loaded only when it is turned on.
+    page.click("#type-filter-button")
+    page.locator("#type-filter-menu label", has_text="Inline").locator("input").click()
+    page.wait_for_function("() => (activityData['Inline'] || []).length === 2", timeout=5000)
+    assert _state(page, "Inline")["shown"] == ["Inline 2025"]

@@ -484,6 +484,14 @@ function isPopupOpen(polyline) {
     return !!popup && (popup.isOpen ? popup.isOpen() : (polyline._map && polyline._map.hasLayer(popup)));
 }
 
+// The track whose popup is open. Hovering other tracks (or their rows in the
+// selection dialog) raises them over it; raiseOpenPopupTrack puts it back on top.
+let openPopupTrack = null;
+
+function raiseOpenPopupTrack() {
+    if (openPopupTrack && openPopupTrack._map) openPopupTrack.bringToFront();
+}
+
 function createPolylineForActivity(activity) {
     if (!activity.coordinates || activity.coordinates.length === 0) return null;
 
@@ -511,6 +519,11 @@ function createPolylineForActivity(activity) {
     // up to the map, so only the popup's own click-to-open handler is dropped.
     polyline.off('click');
 
+    polyline.on('popupopen', function() { openPopupTrack = this; });
+    polyline.on('popupclose', function() {
+        if (openPopupTrack === this) openPopupTrack = null;
+    });
+
     if (manifest.config && manifest.config.enable_highlighting) {
         polyline.on('mouseover', function() {
             this.setStyle(highlightStyle);
@@ -520,6 +533,7 @@ function createPolylineForActivity(activity) {
         polyline.on('mouseout', function() {
             if (!isPopupOpen(this)) {
                 this.setStyle(normalStyle);
+                raiseOpenPopupTrack();
             }
         });
 
@@ -539,6 +553,16 @@ function createPolylineForActivity(activity) {
     return polyline;
 }
 
+function activityInDateRange(activity) {
+    return !currentDateRange ||
+        (activity.date >= currentDateRange.start && activity.date <= currentDateRange.end);
+}
+
+/**
+ * (Re)draws a category's activities that fall within the current date range. Used
+ * both when a category's data first loads and when the date range changes, so a
+ * category loaded later (turned on after the range was set) is filtered too.
+ */
 function addActivitiesToMap(categoryName, activities) {
     if (!mapInstance) {
         console.error('Map instance not available for adding activities');
@@ -551,11 +575,11 @@ function addActivitiesToMap(categoryName, activities) {
         return;
     }
 
-    console.log(`Adding ${activities.length} activities to layer: ${categoryName}`);
     layer.clearLayers();
 
     let addedCount = 0;
     activities.forEach(function(activity) {
+        if (!activityInDateRange(activity)) return;
         const polyline = createPolylineForActivity(activity);
         if (polyline) {
             layer.addLayer(polyline);
@@ -563,7 +587,7 @@ function addActivitiesToMap(categoryName, activities) {
         }
     });
 
-    console.log(`Added ${addedCount} activities to map for ${categoryName}`);
+    console.log(`Added ${addedCount} of ${activities.length} activities to map for ${categoryName}`);
 }
 
 function setupMapEventListeners() {
@@ -615,24 +639,7 @@ function filterActivitiesByDateRange() {
     console.log('Filtering activities by date range:', currentDateRange);
 
     for (const [categoryName, activities] of Object.entries(activityData)) {
-        const layer = findLayerByName(categoryName);
-        if (!layer) continue;
-
-        layer.clearLayers();
-
-        let addedCount = 0;
-        activities.forEach(function(activity) {
-            const inRange = activity.date >= currentDateRange.start && activity.date <= currentDateRange.end;
-            if (!inRange) return;
-
-            const polyline = createPolylineForActivity(activity);
-            if (polyline) {
-                layer.addLayer(polyline);
-                addedCount++;
-            }
-        });
-
-        console.log(`Added ${addedCount} filtered activities to map for ${categoryName}`);
+        addActivitiesToMap(categoryName, activities);
     }
 
     refreshSelectionDialogIfOpen();
@@ -1382,6 +1389,7 @@ function clearSelection() {
     tapSelectLatLng = null;
     const dialog = document.getElementById('area-selection-dialog');
     if (dialog) dialog.remove();
+    raiseOpenPopupTrack();
 }
 
 // ---- The results dialog ----------------------------------------------------
@@ -1562,6 +1570,7 @@ function showSelectionDialog() {
                 item.polyline.once('popupclose', function() { this.setStyle(baseStyle); });
             } else {
                 item.polyline.setStyle(baseStyle);
+                raiseOpenPopupTrack();
             }
         });
         row.addEventListener('click', function(e) {

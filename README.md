@@ -225,3 +225,7 @@ remove them**:
 
 * garth decommissioning: `garth` (Garmin Connect auth, used via `garminconnect`) is being
   retired, so the login needs to move to whatever replaces it
+* docs: revisit the documentation — change the tone of `docs/architecture.md` and
+  improve this README.
+* popup: revisit the activity popup dialog — consider showing just the values without
+  labels, perhaps with icons instead.
