@@ -155,6 +155,72 @@ def test_rectangle_selects_and_summarizes_activities(served_map):
             browser.close()
 
 
+def _touch_drag(page, x1, y1, x2, y2, steps=8):
+    """One-finger drag via CDP touch events, as a phone produces them."""
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Input.dispatchTouchEvent",
+             {"type": "touchStart", "touchPoints": [{"x": x1, "y": y1}]})
+    for i in range(1, steps + 1):
+        x = x1 + (x2 - x1) * i / steps
+        y = y1 + (y2 - y1) * i / steps
+        cdp.send("Input.dispatchTouchEvent",
+                 {"type": "touchMove", "touchPoints": [{"x": x, "y": y}]})
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+
+
+def test_rectangle_can_be_drawn_by_touch(served_map):
+    """On a phone the rectangle is drawn with a one-finger drag (regression).
+
+    Leaflet fires no mousedown/mousemove for a touch drag, so a mouse-only
+    implementation armed the tool but never drew anything.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            context = browser.new_context(has_touch=True, is_mobile=True,
+                                          viewport={"width": 390, "height": 800})
+            page = context.new_page()
+            page.goto(served_map)
+            _wait_loaded(page)
+            corners = page.evaluate(
+                """() => {
+                const rect = mapInstance.getContainer().getBoundingClientRect();
+                const nw = mapInstance.latLngToContainerPoint([50.01, 13.99]);
+                const se = mapInstance.latLngToContainerPoint([49.99, 14.01]);
+                return {x1: rect.left + nw.x, y1: rect.top + nw.y,
+                        x2: rect.left + se.x, y2: rect.top + se.y};
+            }"""
+            )
+            center_before = page.evaluate("() => mapInstance.getCenter()")
+            # iOS Safari ignores touch-action and pans the page unless the touch
+            # events themselves are cancelled, so record whether they were.
+            page.evaluate(
+                """() => {
+                window.touchMovesAllowed = 0;
+                document.addEventListener('touchmove', e => {
+                    if (!e.defaultPrevented) window.touchMovesAllowed++;
+                });
+            }"""
+            )
+            page.tap(".leaflet-control-area-select")  # arm the tool
+            # No crosshair cursor on touch, so a banner says what to do.
+            assert page.locator("#area-select-hint").is_visible()
+            _touch_drag(page, corners["x1"], corners["y1"], corners["x2"], corners["y2"])
+            page.wait_for_selector("#area-selection-dialog", timeout=10000)
+
+            assert page.locator("#area-selection-dialog .area-sel-row").count() == 2
+            # The drag drew the rectangle instead of panning the map.
+            assert page.evaluate("() => mapInstance.getCenter()") == center_before
+            # The tool disarms after one rectangle, so the map pans again.
+            assert page.evaluate("() => mapInstance.dragging.enabled()") is True
+            assert page.locator("#area-select-hint").count() == 0
+            assert page.evaluate("() => window.touchMovesAllowed") == 0
+        finally:
+            browser.close()
+
+
 def test_respects_type_filter(served_map):
     """Deselecting the Running layer should leave nothing to select."""
     from playwright.sync_api import sync_playwright

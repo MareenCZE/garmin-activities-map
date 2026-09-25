@@ -761,6 +761,7 @@ function initializeMapyAttribution() {
  * ========================================================================== */
 let areaSelectActive = false;      // "select area" tool armed / drawing
 let areaSelectStart = null;        // L.LatLng where the current drag began
+let areaSelectPointerId = null;    // pointer drawing the current rectangle
 let areaSelectRectangle = null;    // the L.Rectangle currently on the map
 let areaSelectBounds = null;       // frozen bounds of the last completed rectangle
 let areaSelectMode = 'partial';    // 'partial' (any point inside) | 'full' (all points inside)
@@ -841,17 +842,78 @@ function setAreaSelectArmed(armed) {
         mapInstance.dragging.disable();
         mapInstance.boxZoom.disable();
         mapEl.style.cursor = 'crosshair';
+        // Keep the browser from turning a one-finger drag into a page pan.
+        mapEl.style.touchAction = 'none';
     } else {
+        abortAreaSelectDrag();
         mapInstance.dragging.enable();
         mapInstance.boxZoom.enable();
         mapEl.style.cursor = '';
+        mapEl.style.touchAction = '';
     }
+    showAreaSelectHint(armed);
 }
 
-function onAreaSelectMouseDown(e) {
+/** "Drag to select an area" banner while the tool is armed; touch has no crosshair cursor. */
+function showAreaSelectHint(show) {
+    const existing = document.getElementById('area-select-hint');
+    if (existing) existing.remove();
+    if (!show) return;
+    const hint = L.DomUtil.create('div', '', mapInstance.getContainer());
+    hint.id = 'area-select-hint';
+    hint.textContent = 'Drag to select an area';
+    hint.style.cssText = `
+        position: absolute;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1000;
+        padding: 6px 12px;
+        background: rgba(255, 255, 255, 0.92);
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        font-family: Arial, sans-serif;
+        font-size: 13px;
+        color: #333;
+        pointer-events: none;
+        white-space: nowrap;
+    `;
+}
+
+/*
+ * The rectangle is drawn with pointer events rather than Leaflet's mouse events:
+ * a touch drag produces no mousedown/mousemove at all, only the emulated mouse
+ * events of a tap once the finger lifts, so a mouse-only tool never drew on a phone.
+ */
+/** True for the map itself (tiles, tracks), false for its controls and panels. */
+function isMapSurface(target) {
+    return mapInstance.getPanes().mapPane.contains(target) || target === mapInstance.getContainer();
+}
+
+/*
+ * iOS Safari does not reliably honour touch-action: none here. It still scrolls or
+ * rubber-bands the page on a one-finger drag, which cancels the pointer. Blocking the
+ * touch events' default action stops that; the pointer events still arrive.
+ */
+function onAreaSelectTouch(e) {
+    if (areaSelectActive && isMapSurface(e.target)) e.preventDefault();
+}
+
+function onAreaSelectPointerDown(e) {
     if (!areaSelectActive) return;
-    L.DomEvent.preventDefault(e.originalEvent);
-    areaSelectStart = e.latlng;
+    if (areaSelectPointerId !== null) {
+        // A second finger means a pinch: let Leaflet zoom, drop the half-drawn box.
+        abortAreaSelectDrag();
+        return;
+    }
+    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (!isMapSurface(e.target)) return;
+
+    e.preventDefault();
+    areaSelectPointerId = e.pointerId;
+    const mapEl = mapInstance.getContainer();
+    if (mapEl.setPointerCapture) mapEl.setPointerCapture(e.pointerId);
+    areaSelectStart = mapInstance.mouseEventToLatLng(e);
     if (areaSelectRectangle) {
         mapInstance.removeLayer(areaSelectRectangle);
     }
@@ -860,14 +922,15 @@ function onAreaSelectMouseDown(e) {
     }).addTo(mapInstance);
 }
 
-function onAreaSelectMouseMove(e) {
-    if (!areaSelectActive || !areaSelectStart || !areaSelectRectangle) return;
-    areaSelectRectangle.setBounds(L.latLngBounds(areaSelectStart, e.latlng));
+function onAreaSelectPointerMove(e) {
+    if (e.pointerId !== areaSelectPointerId || !areaSelectStart || !areaSelectRectangle) return;
+    areaSelectRectangle.setBounds(L.latLngBounds(areaSelectStart, mapInstance.mouseEventToLatLng(e)));
 }
 
-function onAreaSelectMouseUp(e) {
-    if (!areaSelectActive || !areaSelectStart) return;
-    const bounds = L.latLngBounds(areaSelectStart, e.latlng);
+function onAreaSelectPointerUp(e) {
+    if (e.pointerId !== areaSelectPointerId || !areaSelectStart) return;
+    const bounds = L.latLngBounds(areaSelectStart, mapInstance.mouseEventToLatLng(e));
+    areaSelectPointerId = null;
     areaSelectStart = null;
     areaSelectEndedAt = Date.now();
     setAreaSelectArmed(false);
@@ -882,6 +945,21 @@ function onAreaSelectMouseUp(e) {
 
     areaSelectBounds = bounds;
     showSelectionDialog();
+}
+
+/** Drop a rectangle still being drawn (pinch, cancelled pointer); the tool stays armed. */
+function abortAreaSelectDrag() {
+    if (areaSelectPointerId === null) return;
+    areaSelectPointerId = null;
+    areaSelectStart = null;
+    if (areaSelectRectangle) {
+        mapInstance.removeLayer(areaSelectRectangle);
+        areaSelectRectangle = null;
+    }
+}
+
+function onAreaSelectPointerCancel(e) {
+    if (e.pointerId === areaSelectPointerId) abortAreaSelectDrag();
 }
 
 /** Drop the current selection, whether a rectangle or a tap, and its dialog. */
@@ -1126,9 +1204,14 @@ function initializeAreaSelection() {
         mapInstance.addControl(new StandaloneControl());
     }
 
-    mapInstance.on('mousedown', onAreaSelectMouseDown);
-    mapInstance.on('mousemove', onAreaSelectMouseMove);
-    mapInstance.on('mouseup', onAreaSelectMouseUp);
+    const mapEl = mapInstance.getContainer();
+    mapEl.addEventListener('pointerdown', onAreaSelectPointerDown);
+    mapEl.addEventListener('pointermove', onAreaSelectPointerMove);
+    mapEl.addEventListener('pointerup', onAreaSelectPointerUp);
+    mapEl.addEventListener('pointercancel', onAreaSelectPointerCancel);
+    // Not passive, so preventDefault can stop the browser's own scrolling.
+    mapEl.addEventListener('touchstart', onAreaSelectTouch, { passive: false });
+    mapEl.addEventListener('touchmove', onAreaSelectTouch, { passive: false });
 }
 
 /* ============================================================================

@@ -33,12 +33,12 @@ Map controls allow for selection of background map, selection of activity catego
 ![Map controls](images/controls.png)
 
 The rectangle button (in the top-left zoom toolbar) enables the area-selection tool: drag a box on
-the map to list the activities inside it, with per-category and overall totals (distance, time,
-count) and a toggle between counting tracks that are *fully* inside vs *partially* inside the box.
-It only considers activities that are currently visible, so it respects the date-range slider and
-the category selection — and while the box stays up, the list updates live as you move the slider
-or toggle categories. Disable it with `enable-area-selection = false` under `[activities]` in your
-config.
+the map (with the mouse, or one finger on a touch screen) to list the activities inside it, with
+per-category and overall totals (distance, time, count) and a toggle between counting tracks that
+are *fully* inside vs *partially* inside the box. It only considers activities that are currently
+visible, so it respects the date-range slider and the category selection — and while the box stays
+up, the list updates live as you move the slider or toggle categories. Disable it with
+`enable-area-selection = false` under `[activities]` in your config.
 
 
 ## How to get it working
@@ -218,7 +218,6 @@ remove them**:
 
 ## Ideas, todos
 
-* mobile: the rectangle (area) selection seems unusable, or at least there is no obvious way to use it
 * is the "tap to reload" button needed, or can the reload happen automatically?
 * time-range filter presets: this year, last year, this month, last month…, plus calendar
   pickers for easier precise selection

@@ -105,7 +105,12 @@ Pure client JS drives the interactivity:
   control** shows/hides zoom, layer, and slider controls.
 - An **area-selection tool** (`initializeAreaSelection`, gated by
   `[activities].enable-area-selection`) adds a rectangle-draw button to the zoom toolbar (so it
-  folds away with the hamburger). Dragging a box lists the activities inside it in a dialog with
+  folds away with the hamburger). The box is drawn from pointer events on the map container, not
+  Leaflet's mouse events, because a touch drag fires no `mousedown`/`mousemove`; while armed the
+  container gets `touch-action: none`, its `touchstart`/`touchmove` are `preventDefault`ed (iOS
+  Safari ignores `touch-action` and would pan the page instead), a "Drag to select an area" hint
+  shows, and a second finger
+  (a pinch) drops the half-drawn box. Dragging a box lists the activities inside it in a dialog with
   per-category and overall distance/time/count totals, a "partially inside" vs "fully inside"
   toggle, and per-row highlight/popup/Garmin links (a row opens the popup without moving the
   map). It iterates the polylines *currently rendered
