@@ -90,6 +90,16 @@ def _leaks_location(*values):
             and any(abs(float(v)) > SYNTHETIC_BOX for v in values))
 
 
+def _denylist_hit(secret, lowered_line):
+    """Names (letters and spaces only) match as whole words so that a short surname is not
+    found inside ordinary words; anything else (passwords, hosts, keys) matches as a substring."""
+    secret = secret.lower()
+    if not all(c.isalpha() or c.isspace() for c in secret):
+        return secret in lowered_line
+    # a "word" character here is a letter or digit; "_", ".", "@" and spaces separate words
+    return re.search(r"(?<![^\W_])%s(?![^\W_])" % re.escape(secret), lowered_line) is not None
+
+
 def check_line(path, line, denylist=()):
     """Return the reasons why this added line must not be committed."""
     if ALLOW_PRAGMA in line:
@@ -115,7 +125,7 @@ def check_line(path, line, denylist=()):
         reasons.append("precise GPS coordinates (fixtures must stay within %g deg of 0,0)" % SYNTHETIC_BOX)
     lowered = line.lower()
     for secret in denylist:
-        if secret.lower() in lowered:
+        if _denylist_hit(secret, lowered):
             reasons.append("private string from denylist/config-local.toml")
             break
     return reasons

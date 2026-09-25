@@ -137,7 +137,7 @@ def categorize_activities(api):
             month = datetime.datetime.fromisoformat(start_time_local).month
 
             # DECISION LOGIC - generally not useful, very specific to myself
-            if "Praha 2-Nusle" in activity_name:
+            if "Nusle" in activity_name:
                 new_type = "KEEP"
             elif (month in [1, 2, 3, 12] and (
                     "Mariánské Hory" in activity_name or "Jizerka" in activity_name or "Kořenov" in activity_name)):

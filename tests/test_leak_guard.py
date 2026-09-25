@@ -178,6 +178,24 @@ class TestRealisticLeaksAreCaught:
         assert reasons("README.md", "Map at ftp.example-home-site.cz/www",
                        denylist=["ftp.example-home-site.cz"])
 
+    @pytest.mark.parametrize("line", [
+        "author: Zorvak",
+        'name = "zorvak"',
+        "zorvak.qentin" + AT + "example.com",
+        "tracks/zorvak_2024.gpx",
+        "by Qentin Zorvak.",
+    ])
+    def test_denylisted_name_as_whole_word(self, line):
+        assert reasons("README.md", line, denylist=["zorvak", "Qentin Zorvak"])
+
+    @pytest.mark.parametrize("line", ["def zorvakify(x):", "unzorvak = 1", "Zorvak2"])
+    def test_denylisted_name_inside_longer_word_passes(self, line):
+        assert reasons("README.md", line, denylist=["zorvak"]) == []
+
+    def test_non_name_entries_still_match_as_substring(self):
+        # a password or key has no word boundaries to rely on
+        assert reasons("README.md", "x=abQ7pw9zz;", denylist=["Q7pw9"])
+
 
 class TestSanitizedFixturesPass:
     def test_null_island_fixtures(self):
