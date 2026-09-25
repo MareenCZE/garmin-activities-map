@@ -101,8 +101,13 @@ Pure client JS drives the interactivity:
 - Lazily fetches each category's JSON (on load if `show_on_load`, otherwise on overlay
   toggle), draws polylines with per-category colour, binds popups (name/date/type/distance/
   duration + Garmin Connect link), and does hover/popup highlighting (bright green).
-- A **noUiSlider date-range slider** filters visible tracks by date; a hamburger **toggle
-  control** shows/hides zoom, layer, and slider controls.
+- A **date-range panel** (`initializeDateRangeSlider`) filters visible tracks by date: a
+  noUiSlider, a preset `<select>` (relative ranges plus one entry per year in the data) and two
+  native `<input type="date">` fields, kept in sync. It counts whole days as UTC day numbers
+  (`isoDateToDay`/`dayToIsoDate`) so timezones and DST can't shift a date; presets are computed
+  from the viewer's local "today", clamped to the data's date span, and the last-picked preset
+  is kept in `localStorage` (custom ranges are not). A hamburger **toggle control** shows/hides
+  zoom, layer, and date controls.
 - An **area-selection tool** (`initializeAreaSelection`, gated by
   `[activities].enable-area-selection`) adds a rectangle-draw button to the zoom toolbar (so it
   folds away with the hamburger). The box is drawn from pointer events on the map container, not

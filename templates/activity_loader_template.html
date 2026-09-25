@@ -18,16 +18,25 @@ let layerGroups = {};
 // Leaflet internal layer id -> category name
 let layerIdToCategory = {};
 
-function parseDate(dateString) {
-    if (!dateString) return null;
-    let date = new Date(dateString);
-    if (isNaN(date.getTime())) {
-        const parts = dateString.split('-');
-        if (parts.length === 3) {
-            date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-        }
-    }
-    return isNaN(date.getTime()) ? null : date;
+// The date filter counts whole calendar days: day N is Date.UTC(...) / DAY_MS.
+// Staying in UTC day numbers keeps timezones and DST from shifting a date by one
+// when it is turned back into the YYYY-MM-DD strings the activities carry.
+const DAY_MS = 86400000;
+
+function dayFromParts(year, monthIndex, day) {
+    return Date.UTC(year, monthIndex, day) / DAY_MS;
+}
+
+// 'YYYY-MM-DD' -> day number, or null when the string is not a real date.
+function isoDateToDay(dateString) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateString || '');
+    if (!m) return null;
+    const day = dayFromParts(+m[1], +m[2] - 1, +m[3]);
+    return dayToIsoDate(day) === dateString ? day : null;  // rejects e.g. 2024-02-31
+}
+
+function dayToIsoDate(day) {
+    return new Date(day * DAY_MS).toISOString().slice(0, 10);
 }
 
 function waitForMap() {
@@ -488,21 +497,82 @@ function filterActivitiesByDateRange() {
     refreshSelectionDialogIfOpen();
 }
 
+// The time-range preset last picked is remembered per browser, so a relative one
+// like "This year" moves on by itself. A hand-picked (custom) range is not kept:
+// it would silently hide activities uploaded after it was set.
+const DATE_PRESET_STORAGE_KEY = 'activitiesMap.datePreset';
+
+const DATE_PRESET_OPTIONS = [
+    ['all', 'All time'],
+    ['last-30-days', 'Last 30 days'],
+    ['last-12-months', 'Last 12 months'],
+    ['this-month', 'This month'],
+    ['last-month', 'Last month'],
+    ['this-year', 'This year'],
+    ['last-year', 'Last year'],
+];
+
+/**
+ * [startDay, endDay] (inclusive) of a preset, relative to today in the viewer's
+ * local calendar. 'year-YYYY' is a whole calendar year. Null for an unknown id.
+ */
+function datePresetRange(presetId, minDay, maxDay) {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+    const today = dayFromParts(y, m, d);
+    switch (presetId) {
+        case 'all': return [minDay, maxDay];
+        case 'last-30-days': return [today - 29, today];
+        case 'last-12-months': return [dayFromParts(y - 1, m, d + 1), today];
+        case 'this-month': return [dayFromParts(y, m, 1), dayFromParts(y, m + 1, 0)];
+        case 'last-month': return [dayFromParts(y, m - 1, 1), dayFromParts(y, m, 0)];
+        case 'this-year': return [dayFromParts(y, 0, 1), dayFromParts(y, 11, 31)];
+        case 'last-year': return [dayFromParts(y - 1, 0, 1), dayFromParts(y - 1, 11, 31)];
+    }
+    const year = /^year-(\d{4})$/.exec(presetId || '');
+    return year ? [dayFromParts(+year[1], 0, 1), dayFromParts(+year[1], 11, 31)] : null;
+}
+
+// Trim a range to the days that have data. A range with no overlap is kept as it
+// is, so it filters to nothing instead of snapping onto the first or last day.
+function clampDayRange(range, minDay, maxDay) {
+    const [start, end] = range;
+    if (end < minDay || start > maxDay) return [start, end];
+    return [Math.max(start, minDay), Math.min(end, maxDay)];
+}
+
+function loadDatePreset() {
+    try {
+        return localStorage.getItem(DATE_PRESET_STORAGE_KEY);
+    } catch (e) {
+        return null;
+    }
+}
+
+function saveDatePreset(presetId) {
+    try {
+        if (presetId === 'custom') localStorage.removeItem(DATE_PRESET_STORAGE_KEY);
+        else localStorage.setItem(DATE_PRESET_STORAGE_KEY, presetId);
+    } catch (e) {
+        // Storage blocked (private mode, previews): the preset just isn't remembered.
+    }
+}
+
 function initializeDateRangeSlider() {
     if (!manifest.date_range) {
         console.log('No date range in manifest, skipping slider initialization');
         return;
     }
 
-    const minDate = parseDate(manifest.date_range.min_date);
-    const maxDate = parseDate(manifest.date_range.max_date);
+    const minDay = isoDateToDay(manifest.date_range.min_date);
+    const maxDay = isoDateToDay(manifest.date_range.max_date);
 
-    if (!minDate || !maxDate) {
+    if (minDay === null || maxDay === null) {
         console.error('Invalid dates for slider initialization');
         return;
     }
 
-    console.log('Initializing date range slider:', minDate, 'to', maxDate);
+    console.log('Initializing date range slider:', manifest.date_range.min_date, 'to', manifest.date_range.max_date);
 
     const existing = document.getElementById('date-range-slider-container');
     if (existing) existing.remove();
@@ -531,6 +601,40 @@ function initializeDateRangeSlider() {
             #date-range-slider-container .noUi-handle:after {
                 display: none;
             }
+            #date-range-slider-container .date-range-track {
+                padding: 0 12px; /* keeps handles at min/max inside the rounded panel */
+            }
+            /* From-date, preset, to-date on one line below the slider. */
+            #date-range-slider-container .date-range-dates {
+                display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                justify-content: space-between;
+                gap: 4px;
+                margin-top: 4px;
+            }
+            /* A phone has no room for all three: the preset drops to its own line. */
+            @media (max-width: 480px) {
+                #date-range-preset {
+                    order: 1;
+                    margin: 0 auto;
+                }
+            }
+            #date-range-slider-container select,
+            #date-range-slider-container input[type="date"] {
+                font: inherit;
+                font-size: 12px;
+                color: rgba(0, 0, 0, 0.8);
+                background: rgba(255, 255, 255, 0.7);
+                border: 1px solid rgba(0, 0, 0, 0.2);
+                border-radius: 4px;
+                padding: 1px 2px;
+            }
+            /* Slim enough that both date fields share one row on a phone. */
+            #date-range-slider-container input[type="date"]::-webkit-calendar-picker-indicator {
+                margin-inline-start: 2px;
+                padding: 0;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -556,56 +660,100 @@ function initializeDateRangeSlider() {
         overflow: hidden;
     `;
 
-    // Inner padding ensures handles at min/max stay inside the rounded panel
+    const option = ([value, label]) => `<option value="${value}">${label}</option>`;
+    const years = [];
+    for (let y = +dayToIsoDate(maxDay).slice(0, 4); y >= +dayToIsoDate(minDay).slice(0, 4); y--) {
+        years.push([`year-${y}`, String(y)]);
+    }
+    const minIso = dayToIsoDate(minDay);
+    const maxIso = dayToIsoDate(maxDay);
+
     sliderContainer.innerHTML = `
-        <div style="padding: 0 12px;">
+        <div class="date-range-track">
             <div id="date-range-slider" style="margin: 6px 0 6px 0;"></div>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 11px; color: rgba(0,0,0,0.75);">
-            <span id="date-range-start">${minDate.toLocaleDateString()}</span>
-            <span id="date-range-end">${maxDate.toLocaleDateString()}</span>
+        <div class="date-range-dates">
+            <input type="date" id="date-range-start" aria-label="From" min="${minIso}" max="${maxIso}">
+            <select id="date-range-preset" aria-label="Time range">
+                ${DATE_PRESET_OPTIONS.map(option).join('')}
+                <optgroup label="Year">${years.map(option).join('')}</optgroup>
+                <option value="custom" disabled>Custom</option>
+            </select>
+            <input type="date" id="date-range-end" aria-label="To" min="${minIso}" max="${maxIso}">
         </div>
     `;
     document.body.appendChild(sliderContainer);
 
     const slider = document.getElementById('date-range-slider');
+    const presetSelect = document.getElementById('date-range-preset');
+    const startInput = document.getElementById('date-range-start');
+    const endInput = document.getElementById('date-range-end');
+
+    // Show [start, end] in every control and filter the map by it. The slider is
+    // left alone when it is the source; its handles stop at the data's edges.
+    function applyRange(range, presetId, fromSlider) {
+        const [start, end] = range;
+        presetSelect.value = presetId;
+        startInput.value = dayToIsoDate(start);
+        endInput.value = dayToIsoDate(end);
+        if (!fromSlider) {
+            const onTrack = day => Math.min(Math.max(day, minDay), maxDay);
+            slider.noUiSlider.set([onTrack(start), onTrack(end)]);
+        }
+        saveDatePreset(presetId);
+
+        const newDateRange = { start: dayToIsoDate(start), end: dayToIsoDate(end) };
+        if (!currentDateRange ||
+            currentDateRange.start !== newDateRange.start ||
+            currentDateRange.end !== newDateRange.end) {
+            currentDateRange = newDateRange;
+            console.log('Date range updated:', currentDateRange);
+            filterActivitiesByDateRange();
+        }
+    }
+
+    function applyPreset(presetId) {
+        applyRange(clampDayRange(datePresetRange(presetId, minDay, maxDay), minDay, maxDay), presetId);
+    }
+
+    function onDateInputChange(event) {
+        let start = isoDateToDay(startInput.value);
+        let end = isoDateToDay(endInput.value);
+        if (start === null || end === null) {
+            // Cleared or half-typed: put back the range that is in effect.
+            startInput.value = currentDateRange.start;
+            endInput.value = currentDateRange.end;
+            return;
+        }
+        // Moving one end past the other drags the other one along.
+        if (start > end) {
+            if (event.target === startInput) end = start;
+            else start = end;
+        }
+        applyRange(clampDayRange([start, end], minDay, maxDay), 'custom');
+    }
 
     try {
-        const minTimestamp = minDate.getTime();
-        const maxTimestamp = maxDate.getTime();
-
         noUiSlider.create(slider, {
-            start: [minTimestamp, maxTimestamp],
+            start: [minDay, maxDay],
             connect: true,
-            range: { min: minTimestamp, max: maxTimestamp }
+            step: 1,
+            // noUiSlider refuses an empty range, which one day of data would give.
+            range: { min: minDay, max: Math.max(maxDay, minDay + 1) }
         });
 
-        slider.noUiSlider.on('update', function(values) {
-            try {
-                const startDate = new Date(parseFloat(values[0]));
-                const endDate = new Date(parseFloat(values[1]));
-
-                if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
-                    document.getElementById('date-range-start').textContent = startDate.toLocaleDateString();
-                    document.getElementById('date-range-end').textContent = endDate.toLocaleDateString();
-
-                    const newDateRange = {
-                        start: startDate.toISOString().split('T')[0],
-                        end: endDate.toISOString().split('T')[0]
-                    };
-
-                    if (!currentDateRange ||
-                        currentDateRange.start !== newDateRange.start ||
-                        currentDateRange.end !== newDateRange.end) {
-                        currentDateRange = newDateRange;
-                        console.log('Date range updated:', currentDateRange);
-                        filterActivitiesByDateRange();
-                    }
-                }
-            } catch (error) {
-                console.error('Error updating date range:', error);
-            }
+        // 'slide' fires only for the user's own dragging, tapping or keys, never
+        // for the set() calls that presets and the date fields make.
+        slider.noUiSlider.on('slide', function(values) {
+            applyRange([Math.round(parseFloat(values[0])), Math.round(parseFloat(values[1]))], 'custom', true);
         });
+        presetSelect.addEventListener('change', () => applyPreset(presetSelect.value));
+        startInput.addEventListener('change', onDateInputChange);
+        endInput.addEventListener('change', onDateInputChange);
+
+        const saved = loadDatePreset();
+        const known = Array.from(presetSelect.options).some(o => o.value === saved && !o.disabled);
+        applyPreset(known ? saved : 'all');
 
         dateSlider = slider;
         console.log('Date range slider initialized successfully');

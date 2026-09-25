@@ -419,35 +419,6 @@ def test_activity_popup_shows_details_and_garmin_link(served_map):
             browser.close()
 
 
-def test_parse_date_handles_iso_fallback_and_garbage(served_map):
-    """parseDate: valid ISO, YYYY-MM-DD fallback, and unparseable -> null."""
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as p:
-        browser = _launch(p)
-        try:
-            page = browser.new_page()
-            page.goto(served_map)
-            _wait_loaded(page)
-
-            result = page.evaluate(
-                """() => ({
-                empty: parseDate('') === null,
-                iso: parseDate('2024-05-01') instanceof Date,
-                month: parseDate('2024-05-01').getMonth(),   // 0-based -> April=3? May=4
-                day: parseDate('2024-05-01').getDate(),
-                garbage: parseDate('not-a-date') === null,
-            })"""
-            )
-            assert result["empty"] is True
-            assert result["iso"] is True
-            assert result["month"] == 4      # May, 0-based
-            assert result["day"] == 1
-            assert result["garbage"] is True
-        finally:
-            browser.close()
-
-
 def test_tool_absent_when_disabled(config, tmp_path):
     """With enable-area-selection = false the toolbar button is not added."""
     from playwright.sync_api import sync_playwright

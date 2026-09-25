@@ -32,6 +32,11 @@ Map controls allow for selection of background map, selection of activity catego
 
 ![Map controls](images/controls.png)
 
+The panel across the top filters activities by date. Drag the slider, pick a preset (all time, last
+30 days, last 12 months, this or last month, this or last year, or any single year with activities),
+or type/pick exact dates in the two date fields. The browser remembers the preset you last picked, so
+a relative one like "This year" keeps moving with the calendar; a hand-set range is not remembered.
+
 The rectangle button (in the top-left zoom toolbar) enables the area-selection tool: drag a box on
 the map (with the mouse, or one finger on a touch screen) to list the activities inside it, with
 per-category and overall totals (distance, time, count) and a toggle between counting tracks that
@@ -218,8 +223,5 @@ remove them**:
 
 ## Ideas, todos
 
-* is the "tap to reload" button needed, or can the reload happen automatically?
-* time-range filter presets: this year, last year, this month, last month…, plus calendar
-  pickers for easier precise selection
 * garth decommissioning: `garth` (Garmin Connect auth, used via `garminconnect`) is being
   retired, so the login needs to move to whatever replaces it
