@@ -22,7 +22,9 @@ Example with a dark background map:
 ![Black map](images/black.png)
 
 Hovering over an activity highlights it. Clicking an activity opens a popup with basic information about the activity and a link to Garmin
-Connect:
+Connect. The click doesn't have to hit the thin line exactly: anything within a few pixels counts
+(about 20 px for a finger on a touch screen, 6 px for a mouse). Where several tracks pass through the
+clicked spot, a list of them is shown instead, to pick from:
 
 ![Activity popup](images/activity-popup.png)
 
@@ -123,12 +125,12 @@ python -m pytest
 ```
 
 Most tests are pure-Python and cover the download/storage/map-generation/upload
-pipeline. Two modules — `tests/test_browser_mapy.py` and
-`tests/test_browser_area_select.py` — are **browser tests**: they build a real
+pipeline. Three modules — `tests/test_browser_mapy.py`,
+`tests/test_browser_area_select.py` and `tests/test_browser_tap_select.py` — are **browser tests**: they build a real
 map, serve it, and drive it in headless Chromium with
 [Playwright](https://playwright.dev/python/) to exercise the client-side
 JavaScript in `templates/activity_loader_template.html` (the Mapy.com
-attribution toggle and the area-selection tool). This is the only coverage the
+attribution toggle, the area-selection tool and the tap picker). This is the only coverage the
 JavaScript gets, so it matters that they actually run.
 
 They are opt-in and **skip silently** unless both Playwright and a Chromium build
@@ -137,7 +139,7 @@ are present. To enable them:
 ```
 pip install -r requirements-dev.txt
 playwright install chromium
-python -m pytest tests/test_browser_area_select.py tests/test_browser_mapy.py
+python -m pytest tests/test_browser_area_select.py tests/test_browser_mapy.py tests/test_browser_tap_select.py
 ```
 
 To check coverage:
@@ -216,13 +218,8 @@ remove them**:
 
 ## Ideas, todos
 
-* mobile: picking an activity is fiddly, it often takes several taps to hit the line
 * mobile: the rectangle (area) selection seems unusable, or at least there is no obvious way to use it
 * is the "tap to reload" button needed, or can the reload happen automatically?
-* overlapping activities: many activities repeat the same track or overlap a lot, so a click/tap
-  rarely picks the one you want. The click/tap could instead list all activities whose lines pass
-  through a small area around that point, so you can pick one (like the rectangle selection, but
-  for a point)
 * time-range filter presets: this year, last year, this month, last month…, plus calendar
   pickers for easier precise selection
 * garth decommissioning: `garth` (Garmin Connect auth, used via `garminconnect`) is being

@@ -302,6 +302,7 @@ async function loadManifest() {
         initializeToggleControl();
         initializeMapyAttribution();
         initializeAreaSelection();
+        initializeTapSelection();
 
     } catch (error) {
         console.error('Error loading manifest:', error);
@@ -327,6 +328,12 @@ async function loadCategoryData(categoryName, categoryInfo) {
     }
 }
 
+function isPopupOpen(polyline) {
+    const popup = polyline.getPopup();
+    // Check if popup is open. fallback to map check if isOpen not available
+    return !!popup && (popup.isOpen ? popup.isOpen() : (polyline._map && polyline._map.hasLayer(popup)));
+}
+
 function createPolylineForActivity(activity) {
     if (!activity.coordinates || activity.coordinates.length === 0) return null;
 
@@ -349,6 +356,10 @@ function createPolylineForActivity(activity) {
         : null;
 
     polyline.bindPopup(createActivityPopupHtml(activity, garminConnectUrl));
+    // Clicks are resolved by the map-level tap picker (onMapTap) instead, which
+    // tolerates near misses and lists overlapping tracks. The click still bubbles
+    // up to the map, so only the popup's own click-to-open handler is dropped.
+    polyline.off('click');
 
     if (manifest.config && manifest.config.enable_highlighting) {
         polyline.on('mouseover', function() {
@@ -357,11 +368,7 @@ function createPolylineForActivity(activity) {
         });
 
         polyline.on('mouseout', function() {
-            const popup = this.getPopup();
-            // Check if popup is open. fallback to map check if isOpen not available
-            const isOpen = popup && (popup.isOpen ? popup.isOpen() : (this._map && this._map.hasLayer(popup)));
-
-            if (!isOpen) {
+            if (!isPopupOpen(this)) {
                 this.setStyle(normalStyle);
             }
         });
@@ -758,6 +765,9 @@ let areaSelectRectangle = null;    // the L.Rectangle currently on the map
 let areaSelectBounds = null;       // frozen bounds of the last completed rectangle
 let areaSelectMode = 'partial';    // 'partial' (any point inside) | 'full' (all points inside)
 let areaSelectButton = null;
+let areaSelectEndedAt = 0;         // time the last drag ended; its trailing click is not a tap
+let tapSelectLatLng = null;        // L.LatLng of the tap whose nearby activities the dialog lists
+let tapSelectTolerancePx = 0;      // pick radius used for that tap
 let selectionRefreshScheduled = false;
 
 const AREA_SELECT_NORMAL_STYLE = { weight: 2, opacity: 0.8 };
@@ -859,13 +869,14 @@ function onAreaSelectMouseUp(e) {
     if (!areaSelectActive || !areaSelectStart) return;
     const bounds = L.latLngBounds(areaSelectStart, e.latlng);
     areaSelectStart = null;
+    areaSelectEndedAt = Date.now();
     setAreaSelectArmed(false);
 
     // A click (or a rectangle a few pixels wide) is treated as "cancel".
     const nw = mapInstance.latLngToLayerPoint(bounds.getNorthWest());
     const se = mapInstance.latLngToLayerPoint(bounds.getSouthEast());
     if (Math.abs(nw.x - se.x) < 5 || Math.abs(nw.y - se.y) < 5) {
-        clearAreaSelection();
+        clearSelection();
         return;
     }
 
@@ -873,31 +884,37 @@ function onAreaSelectMouseUp(e) {
     showSelectionDialog();
 }
 
-function clearAreaSelection() {
+/** Drop the current selection, whether a rectangle or a tap, and its dialog. */
+function clearSelection() {
     if (areaSelectRectangle) {
         mapInstance.removeLayer(areaSelectRectangle);
         areaSelectRectangle = null;
     }
     areaSelectBounds = null;
+    tapSelectLatLng = null;
     const dialog = document.getElementById('area-selection-dialog');
     if (dialog) dialog.remove();
 }
 
 // ---- The results dialog ----------------------------------------------------
 
+function selectionActive() {
+    return !!(areaSelectBounds || tapSelectLatLng);
+}
+
 /**
- * While the rectangle + dialog are up, keep the table in sync with the map when
+ * While the rectangle (or tap) + dialog are up, keep the table in sync with the map when
  * the date-range slider or the layer toggles change what's visible. Debounced via
  * requestAnimationFrame so a slider drag (which fires continuously) rebuilds the
  * dialog at most once per frame.
  */
 function refreshSelectionDialogIfOpen() {
-    if (!areaSelectBounds || !document.getElementById('area-selection-dialog')) return;
+    if (!selectionActive() || !document.getElementById('area-selection-dialog')) return;
     if (selectionRefreshScheduled) return;
     selectionRefreshScheduled = true;
     requestAnimationFrame(function() {
         selectionRefreshScheduled = false;
-        if (areaSelectBounds && document.getElementById('area-selection-dialog')) {
+        if (selectionActive() && document.getElementById('area-selection-dialog')) {
             showSelectionDialog();
         }
     });
@@ -907,7 +924,14 @@ function showSelectionDialog() {
     const existing = document.getElementById('area-selection-dialog');
     if (existing) existing.remove();
 
-    const selection = areaSelectBounds ? computeAreaSelection(areaSelectBounds, areaSelectMode) : [];
+    // The dialog lists either the activities in a rectangle or those near a tap.
+    const isArea = !!areaSelectBounds;
+    let selection = [];
+    if (isArea) {
+        selection = computeAreaSelection(areaSelectBounds, areaSelectMode);
+    } else if (tapSelectLatLng) {
+        selection = computeTapSelection(tapSelectLatLng, tapSelectTolerancePx);
+    }
 
     const dialog = document.createElement('div');
     dialog.id = 'area-selection-dialog';
@@ -916,6 +940,7 @@ function showSelectionDialog() {
         top: 60px;
         right: 10px;
         width: 340px;
+        max-width: calc(100vw - 20px);
         max-height: calc(100vh - 80px);
         z-index: 1001;
         display: flex;
@@ -973,18 +998,22 @@ function showSelectionDialog() {
             </div>`;
         }).join('');
 
-    const emptyMsg = '<div style="padding:12px 10px;color:#888;">No visible activities in this area. Try "partially inside", or check the date / type filters.</div>';
-
-    dialog.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid rgba(0,0,0,0.1);">
-            <strong style="font-size:13px;">Selection</strong>
-            <span id="area-sel-close" title="Close" style="cursor:pointer;font-size:16px;line-height:1;color:#666;padding:0 4px;">✕</span>
-        </div>
+    const emptyMsg = isArea
+        ? '<div style="padding:12px 10px;color:#888;">No visible activities in this area. Try "partially inside", or check the date / type filters.</div>'
+        : '<div style="padding:12px 10px;color:#888;">No visible activities here any more. Check the date / type filters.</div>';
+    const modeToggle = isArea ? `
         <div style="padding:8px 10px;">
             <label style="margin-right:12px;cursor:pointer;"><input type="radio" name="area-sel-mode" value="partial" ${areaSelectMode === 'partial' ? 'checked' : ''}> Partially inside</label>
             <label style="cursor:pointer;"><input type="radio" name="area-sel-mode" value="full" ${areaSelectMode === 'full' ? 'checked' : ''}> Fully inside</label>
+        </div>` : '';
+
+    dialog.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid rgba(0,0,0,0.1);">
+            <strong style="font-size:13px;">${isArea ? 'Selection' : 'Activities here'}</strong>
+            <span id="area-sel-close" title="Close" style="cursor:pointer;font-size:16px;line-height:1;color:#666;padding:0 4px;">✕</span>
         </div>
-        <div style="padding:0 10px 8px 10px;border-bottom:1px solid rgba(0,0,0,0.1);">
+        ${modeToggle}
+        <div style="padding:${isArea ? '0' : '8px'} 10px 8px 10px;border-bottom:1px solid rgba(0,0,0,0.1);">
             <div style="font-weight:bold;margin-bottom:4px;">
                 ${selection.length} activit${selection.length === 1 ? 'y' : 'ies'} · ${totalDistance.toFixed(1)} km · ${formatDuration(totalDuration)}
             </div>
@@ -998,7 +1027,7 @@ function showSelectionDialog() {
     L.DomEvent.disableClickPropagation(dialog);
     L.DomEvent.disableScrollPropagation(dialog);
 
-    dialog.querySelector('#area-sel-close').onclick = clearAreaSelection;
+    dialog.querySelector('#area-sel-close').onclick = clearSelection;
 
     dialog.querySelectorAll('input[name="area-sel-mode"]').forEach(function(input) {
         input.onchange = function() {
@@ -1019,7 +1048,14 @@ function showSelectionDialog() {
         });
         row.addEventListener('mouseleave', function() {
             row.style.background = '';
-            item.polyline.setStyle(baseStyle);
+            // Leaving the row (e.g. on the way to the close button) must not drop
+            // the highlight of a track whose popup the row click opened; that
+            // popup's close resets the style instead.
+            if (isPopupOpen(item.polyline)) {
+                item.polyline.once('popupclose', function() { this.setStyle(baseStyle); });
+            } else {
+                item.polyline.setStyle(baseStyle);
+            }
         });
         row.addEventListener('click', function(e) {
             if (e.target.tagName === 'A') return; // let the Garmin link work normally
@@ -1050,7 +1086,7 @@ function initializeAreaSelection() {
         if (areaSelectActive) {
             setAreaSelectArmed(false);          // toggle off if already armed
         } else {
-            clearAreaSelection();               // drop any previous rectangle/dialog
+            clearSelection();                   // drop any previous rectangle/dialog
             setAreaSelectArmed(true);
         }
     };
@@ -1079,6 +1115,84 @@ function initializeAreaSelection() {
     mapInstance.on('mousedown', onAreaSelectMouseDown);
     mapInstance.on('mousemove', onAreaSelectMouseMove);
     mapInstance.on('mouseup', onAreaSelectMouseUp);
+}
+
+/* ============================================================================
+ * Tap selection: a click/tap picks the activities whose tracks pass within a few
+ * pixels of it, instead of requiring a hit on the 2 px line. One match opens its
+ * popup directly; several (overlapping tracks) are listed in the selection dialog.
+ * Like the area selection it only considers the currently visible polylines.
+ * ========================================================================== */
+const TAP_TOLERANCE_TOUCH_PX = 20;   // a fingertip covers ~40 px
+const TAP_TOLERANCE_MOUSE_PX = 6;
+
+function tapTolerancePx(e) {
+    // Chromium/Firefox/Safari report the click's pointerType; fall back to the
+    // device's primary pointer where they don't.
+    const pointerType = e && e.originalEvent && e.originalEvent.pointerType;
+    const coarse = pointerType
+        ? pointerType !== 'mouse'
+        : !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    return coarse ? TAP_TOLERANCE_TOUCH_PX : TAP_TOLERANCE_MOUSE_PX;
+}
+
+/** Screen distance (px) from a layer point to an activity's track. */
+function distanceToActivityPx(activity, point) {
+    const coords = activity.coordinates;
+    let prev = mapInstance.latLngToLayerPoint(coords[0]);
+    if (coords.length === 1) return point.distanceTo(prev);
+    let best = Infinity;
+    for (let i = 1; i < coords.length; i++) {
+        const cur = mapInstance.latLngToLayerPoint(coords[i]);
+        best = Math.min(best, L.LineUtil.pointToSegmentDistance(point, prev, cur));
+        prev = cur;
+    }
+    return best;
+}
+
+/** Visible activities whose track passes within tolerancePx of latlng, nearest first. */
+function computeTapSelection(latlng, tolerancePx) {
+    const point = mapInstance.latLngToLayerPoint(latlng);
+    return collectVisibleActivities()
+        .filter(function(item) {
+            const coords = item.activity.coordinates;
+            if (!coords || coords.length === 0) return false;
+            // Cheap reject: the tap must fall inside the track's bounding box
+            // grown by the tolerance before any segment is measured.
+            const b = item.polyline.getBounds();
+            const nw = mapInstance.latLngToLayerPoint(b.getNorthWest());
+            const se = mapInstance.latLngToLayerPoint(b.getSouthEast());
+            if (point.x < nw.x - tolerancePx || point.x > se.x + tolerancePx ||
+                point.y < nw.y - tolerancePx || point.y > se.y + tolerancePx) {
+                return false;
+            }
+            item.distancePx = distanceToActivityPx(item.activity, point);
+            return item.distancePx <= tolerancePx;
+        })
+        .sort((a, b) => a.distancePx - b.distancePx);
+}
+
+function onMapTap(e) {
+    // Leave clicks alone while the area tool is armed, and ignore the click the
+    // browser fires at the end of a rectangle drag.
+    if (areaSelectActive || Date.now() - areaSelectEndedAt < 500) return;
+
+    const tolerancePx = tapTolerancePx(e);
+    const matches = computeTapSelection(e.latlng, tolerancePx);
+    if (matches.length === 0) return;
+    if (matches.length === 1) {
+        matches[0].polyline.openPopup(e.latlng);
+        return;
+    }
+    clearSelection();
+    tapSelectLatLng = e.latlng;
+    tapSelectTolerancePx = tolerancePx;
+    showSelectionDialog();
+}
+
+function initializeTapSelection() {
+    if (!mapInstance) return;
+    mapInstance.on('click', onMapTap);
 }
 
 document.addEventListener('DOMContentLoaded', function() {
