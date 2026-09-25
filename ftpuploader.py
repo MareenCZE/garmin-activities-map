@@ -3,21 +3,27 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 from common import logger, config
 
-# random key used to encrypt/decrypt FTP password
-CRYPTO_KEY = 'mMF32hspwbAhawquFRC070fczdWLb0nF3dX4fHd7R_k='
+# Per-machine key that encrypts the FTP password, generated on the first ENCRYPT_FTP_PASSWORD run.
+# Lives next to the Garmin tokens (git-ignored); without it the password must be re-encrypted.
+KEY_FILENAME = 'ftp.key'
+
+PROTOCOLS = ('FTP', 'FTPS')
 
 
 class FtpConfig:
-    def __init__(self, ftp_host, ftp_user, ftp_pass, remote_path, remote_filename):
+    def __init__(self, ftp_host, ftp_user, ftp_pass, remote_path, remote_filename, protocol='FTPS'):
+        if protocol not in PROTOCOLS:
+            raise ValueError(f"Unsupported [ftp] protocol '{protocol}' - use one of {', '.join(PROTOCOLS)}")
         self.host = ftp_host
         self.user = ftp_user
         self.password = ftp_pass
         self.remote_path = remote_path
         self.remote_filename = remote_filename
+        self.protocol = protocol
 
     @staticmethod
     def create_config(config_dict):
@@ -26,8 +32,21 @@ class FtpConfig:
             ftp_user=config_dict['ftp']['user'],
             ftp_pass=decrypt(config_dict['ftp']['pass']),
             remote_path=config_dict['ftp']['remote-path'],
-            remote_filename=config_dict['ftp']['remote-filename']
+            remote_filename=config_dict['ftp']['remote-filename'],
+            protocol=config_dict['ftp'].get('protocol', 'FTPS').upper()
         )
+
+
+def connect(ftp_config):
+    """Open a logged-in connection; FTPS also encrypts the data channel."""
+    if ftp_config.protocol == 'FTPS':
+        ftp = ftplib.FTP_TLS(ftp_config.host)
+        ftp.login(user=ftp_config.user, passwd=ftp_config.password)
+        ftp.prot_p()
+    else:
+        ftp = ftplib.FTP(ftp_config.host)
+        ftp.login(user=ftp_config.user, passwd=ftp_config.password)
+    return ftp
 
 
 def get_remote_file_info(ftp, filename):
@@ -95,9 +114,8 @@ def upload_map_with_data_to_ftp_incremental(html_filename: str):
 
     ftp = None
     try:
-        logger.info(f"Connecting to {ftp_config.host} as {ftp_config.user}")
-        ftp = ftplib.FTP(ftp_config.host)
-        ftp.login(user=ftp_config.user, passwd=ftp_config.password)
+        logger.info(f"Connecting to {ftp_config.host} as {ftp_config.user} ({ftp_config.protocol})")
+        ftp = connect(ftp_config)
         ftp.cwd(ftp_config.remote_path)
 
         # Check and upload the main HTML file
@@ -185,9 +203,8 @@ def upload_map_with_data_to_ftp(html_filename: str):
 
     ftp = None
     try:
-        logger.info(f"Connecting to {ftp_config.host} as {ftp_config.user}")
-        ftp = ftplib.FTP(ftp_config.host)
-        ftp.login(user=ftp_config.user, passwd=ftp_config.password)
+        logger.info(f"Connecting to {ftp_config.host} as {ftp_config.user} ({ftp_config.protocol})")
+        ftp = connect(ftp_config)
         ftp.cwd(ftp_config.remote_path)
 
         # Upload the main HTML file
@@ -253,8 +270,7 @@ def clean_remote_data_directory(ftp_config):
     """Clean old JSON files from the remote data directory before uploading new ones"""
     ftp = None
     try:
-        ftp = ftplib.FTP(ftp_config.host)
-        ftp.login(user=ftp_config.user, passwd=ftp_config.password)
+        ftp = connect(ftp_config)
         ftp.cwd(ftp_config.remote_path)
 
         # Try to change to data directory
@@ -307,13 +323,39 @@ def upload_map_with_data_to_ftp_clean(html_filename: str):
     upload_map_with_data_to_ftp(html_filename)
 
 
+REENCRYPT_HINT = ("Put the plain-text password into [ftp] pass in config-local.toml, run with "
+                  "--utility-mode ENCRYPT_FTP_PASSWORD and replace it with the printed value.")
+
+
+def key_file_path():
+    return Path(config['storage']['directory-token-store']) / KEY_FILENAME
+
+
+def load_key(create=False):
+    """Read the per-machine key; with create=True, generate it (mode 0600) if missing."""
+    key_file = key_file_path()
+    if key_file.exists():
+        return key_file.read_bytes().strip()
+    if not create:
+        raise RuntimeError(f"FTP password key {key_file} not found. {REENCRYPT_HINT}")
+    key_file.parent.mkdir(parents=True, exist_ok=True)
+    key = Fernet.generate_key()
+    fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as file:
+        file.write(key)
+    logger.info(f"Generated a new FTP password key in {key_file} - back it up together with your config")
+    return key
+
+
 def decrypt(encrypted_text):
-    cipher_suite = Fernet(CRYPTO_KEY)
-    decrypted_text = cipher_suite.decrypt(encrypted_text).decode()
-    return decrypted_text
+    cipher_suite = Fernet(load_key())
+    try:
+        return cipher_suite.decrypt(encrypted_text).decode()
+    except InvalidToken:
+        raise RuntimeError(f"FTP password cannot be decrypted with {key_file_path()}. {REENCRYPT_HINT}") from None
 
 
 def encrypt_password():
-    cipher_suite = Fernet(CRYPTO_KEY)
+    cipher_suite = Fernet(load_key(create=True))
     encrypted_text = cipher_suite.encrypt(config['ftp']['pass'].encode())
     print(encrypted_text.decode())

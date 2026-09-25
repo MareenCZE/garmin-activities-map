@@ -45,10 +45,13 @@ config.
 * get python dependencies from requirements.txt
 * only if you want to upload resulting map to an FTP site
   * copy the [ftp] section from config-default.toml to config-local.toml and populate it with your personal values
+  * set `protocol` to FTPS (the default) or FTP if your host does not support FTPS; plain FTP sends the password unencrypted
   * first put your password in plain-text there
   * run the tool while setting all the processors to OFF and setting utility-mode to ENCRYPT_FTP_PASSWORD
+    * `python activities-map.py --downloader OFF --map-creator OFF --uploader OFF --utility-mode ENCRYPT_FTP_PASSWORD`
   * replace password in the config with the printed encrypted version
-  * switch back all the processors to ON
+  * the first run generates a random key in `.auth/ftp.key` (git-ignored). Back it up together with
+    config-local.toml; without it the password has to be encrypted again
 * only if you want to use Mapy.com (formerly Mapy.cz) map tiles (useful mostly for tourist paths in Central Europe region):
   * go to https://developer.mapy.com/en/rest-api-mapy-cz/api-key/
   * generate your own API key
@@ -212,5 +215,15 @@ remove them**:
 
 ## Ideas, todos
 
-* find all activities in a selection rectangle
-* put it online - hosting with python and storage
+* mobile: picking an activity is fiddly, it often takes several taps to hit the line
+* mobile: the rectangle (area) selection seems unusable, or at least there is no obvious way to use it
+* the Seznam.cz attribution is shown twice, once is enough; can the Mapy.com logo be smaller?
+* is the "tap to reload" button needed, or can the reload happen automatically?
+* overlapping activities: many activities repeat the same track or overlap a lot, so a click/tap
+  rarely picks the one you want. The click/tap could instead list all activities whose lines pass
+  through a small area around that point, so you can pick one (like the rectangle selection, but
+  for a point)
+* time-range filter presets: this year, last year, this month, last month…, plus calendar
+  pickers for easier precise selection
+* garth decommissioning: `garth` (Garmin Connect auth, used via `garminconnect`) is being
+  retired, so the login needs to move to whatever replaces it

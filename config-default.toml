@@ -27,8 +27,11 @@ activity-id = ""
 host = ""
 # FTP username
 user = ""
-# FTP password. It needs to be encrypted - see encrypt method in ftpuploader.py
+# FTP password, encrypted - run utility-mode ENCRYPT_FTP_PASSWORD (see README). The encryption key is
+# generated on that first run into ftp.key in directory-token-store; keep it, or re-encrypt the password.
 pass = ""
+# FTPS (FTP over TLS) or FTP. Plain FTP sends the login and files unencrypted - use it only if your host lacks FTPS.
+protocol = "FTPS"
 # FTP directory path on the server
 remote-path = ""
 # Name of the file on the FTP server which the generated map will be saved to

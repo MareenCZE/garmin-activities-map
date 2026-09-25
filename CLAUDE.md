@@ -52,8 +52,10 @@ polished app — a single user runs it by hand.
   (0, 0) ("Null Island"), Garmin owner fields `null`, made-up names, IDs and
   tokens. Never copy values from `data/`, `.auth/`, or `config-local.toml` into
   tests, docs, or commit messages — imitate the *shape* of real data, not its values.
-- The FTP password is Fernet-encrypted in config, but `CRYPTO_KEY` is hard-coded
-  in `ftpuploader.py`: this is obfuscation, not security. Don't treat it as safe.
+- The FTP password is Fernet-encrypted in config with a per-machine key generated
+  into `ftp.key` in the token-store dir (`.auth/`). Never hard-code a key again:
+  the repo is public. `[ftp] protocol` picks FTPS (default) or plain FTP; plain
+  FTP still sends the credentials in clear text.
 - Incremental FTP upload detects changes by comparing file **size**, so
   same-size content changes can be missed (mitigated only for `manifest.json`,
   which is always re-uploaded). Keep this in mind when touching upload logic.
