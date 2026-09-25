@@ -58,6 +58,9 @@ python -m pytest tests/test_browser_mapy.py
 - `test_browser_area_select.py`, `test_browser_tap_select.py` — headless-Chromium
   checks of the rectangle selection tool and the click/tap picker (touch and mouse
   tolerance, overlapping-track list); opt-in like the one above
+- `test_browser_controls.py` — headless-Chromium check of the control layout
+  (date panel, tiles/types dropdowns, zoom bar, top-right hamburger) and of the
+  tiles select and activity-types multiselect; opt-in like the one above
 - `test_leak_guard.py` — the `.githooks` pre-commit guard: realistic synthetic
   Garmin artifacts are rejected and sanitized ones accepted, end-to-end commits in
   a throwaway repo, a whole-repo audit, and (local only, skipped on a fresh clone)

@@ -364,10 +364,10 @@ def create_map_with_activities(activities, filename):
         feature_group.add_to(activities_map)
         logger.debug(f"Created FeatureGroup for category: {mapping.name} (activity_count: {manifest['categories'][mapping.name]['activity_count']})")
 
-    # Add layer control - this is crucial for JavaScript to find layers
+    # Add layer control - this is crucial for JavaScript to find layers. The page
+    # hides it and shows its own tiles/types dropdowns, which drive the same layers.
     layer_control = folium.LayerControl(
-        collapsed=False,  # Keep it expanded initially for debugging
-        draggable=True,
+        collapsed=False,
         position="topleft"
     )
     layer_control.add_to(activities_map)

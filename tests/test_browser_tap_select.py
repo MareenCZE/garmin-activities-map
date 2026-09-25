@@ -192,7 +192,9 @@ def test_tap_on_empty_map_does_nothing(served_map, browser):
 
 def test_hidden_category_is_not_picked(served_map, browser):
     page = _open(browser, served_map, touch=True)
-    page.locator(".leaflet-control-layers").get_by_text("Running", exact=True).click()
+    page.click("#type-filter-button")
+    page.locator("#type-filter-menu label", has_text="Running").locator("input").click()
+    page.keyboard.press("Escape")
     pt = _page_point(page, SOLO_LAT, 0.005)
     page.touchscreen.tap(pt["x"], pt["y"])
     page.wait_for_timeout(300)

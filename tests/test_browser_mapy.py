@@ -86,14 +86,14 @@ def test_mapy_logo_toggles_with_active_base_layer(served_map):
             page.goto(served_map)
 
             # loader waits ~2s then wires the map + controls
-            page.wait_for_selector(".leaflet-control-layers", timeout=20000)
+            page.wait_for_selector("#tile-layer-select", timeout=20000)
             page.wait_for_selector(".mapy-attribution", state="attached", timeout=20000)
 
             # OSM is the default base layer -> Mapy logo hidden
             assert _display(page, ".mapy-attribution") == "none"
 
             # switch to the Mapy.com base layer -> logo appears
-            page.get_by_text("Mapy Winter", exact=True).click()
+            page.select_option("#tile-layer-select", label="Mapy Winter")
             page.wait_for_function(
                 "getComputedStyle(document.querySelector('.mapy-attribution')).display === 'flex'",
                 timeout=10000,
@@ -116,7 +116,7 @@ def test_mapy_logo_toggles_with_active_base_layer(served_map):
                 "el => el.textContent") == "Seznam.cz a.s. and others"
 
             # switch back to OSM -> logo hidden again
-            page.get_by_text("OSM", exact=True).click()
+            page.select_option("#tile-layer-select", label="OSM")
             page.wait_for_function(
                 "getComputedStyle(document.querySelector('.mapy-attribution')).display === 'none'",
                 timeout=10000,

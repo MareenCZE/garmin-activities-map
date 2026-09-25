@@ -37,7 +37,7 @@ The panel across the top filters activities by date. Drag the slider, pick a pre
 or type/pick exact dates in the two date fields. The browser remembers the preset you last picked, so
 a relative one like "This year" keeps moving with the calendar; a hand-set range is not remembered.
 
-The rectangle button (in the top-left zoom toolbar) enables the area-selection tool: drag a box on
+The rectangle button (top right, under the menu button) enables the area-selection tool: drag a box on
 the map (with the mouse, or one finger on a touch screen) to list the activities inside it, with
 per-category and overall totals (distance, time, count) and a toggle between counting tracks that
 are *fully* inside vs *partially* inside the box. It only considers activities that are currently

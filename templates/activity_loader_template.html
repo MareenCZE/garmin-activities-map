@@ -15,6 +15,9 @@ let mapInstance = null;
 // name -> L.FeatureGroup (or other overlay layer)
 let layerGroups = {};
 
+// name -> L.TileLayer, the base maps offered in the tiles dropdown
+let baseLayers = {};
+
 // Leaflet internal layer id -> category name
 let layerIdToCategory = {};
 
@@ -38,6 +41,136 @@ function isoDateToDay(dateString) {
 function dayToIsoDate(day) {
     return new Date(day * DAY_MS).toISOString().slice(0, 10);
 }
+
+/**
+ * Styles shared by the top-left panels. Folium's layer control stays on the map,
+ * hidden: its overlayadd/overlayremove/baselayerchange events still drive category
+ * loading, but the tiles and types dropdowns (initializeLayerSelects) are its UI.
+ */
+function injectMapControlStyles() {
+    const style = document.createElement('style');
+    style.id = 'map-control-style';
+    style.textContent = `
+        .leaflet-control-layers {
+            display: none;
+        }
+        .map-panel {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+        }
+        .map-panel select,
+        .map-panel input[type="date"],
+        .map-panel button {
+            font: inherit;
+            font-size: 12px;
+            color: rgba(0, 0, 0, 0.8);
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            padding: 1px 2px;
+        }
+        /* Button bars (hamburger, area select, zoom) in the panels' glass style. */
+        .leaflet-bar,
+        .leaflet-touch .leaflet-bar {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+            overflow: hidden;
+        }
+        .leaflet-bar a,
+        .leaflet-touch .leaflet-bar a {
+            width: 30px;
+            height: 30px;
+            line-height: 30px;
+            background: transparent;
+            color: rgba(0, 0, 0, 0.8);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 0;
+        }
+        .leaflet-bar a:last-child {
+            border-bottom: none;
+        }
+        /* Bootstrap, which Folium loads, underlines links on hover. */
+        .leaflet-bar a:hover,
+        .leaflet-bar a:focus {
+            background: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+        }
+        .leaflet-bar a.leaflet-disabled {
+            background: transparent;
+            color: rgba(0, 0, 0, 0.3);
+        }
+        #map-layer-selects {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 8px;
+        }
+        #type-filter-button {
+            cursor: pointer;
+            padding: 1px 6px;
+            white-space: nowrap;
+        }
+        #type-filter-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            min-width: 180px;
+            max-height: 60vh;
+            overflow-y: auto;
+            padding: 4px 0;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        #type-filter-menu.open {
+            display: block;
+        }
+        #type-filter-menu .type-filter-actions {
+            display: flex;
+            gap: 6px;
+            padding: 2px 8px 6px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+            margin-bottom: 2px;
+        }
+        #type-filter-menu .type-filter-actions button {
+            cursor: pointer;
+            padding: 1px 8px;
+        }
+        #type-filter-menu label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 8px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        #type-filter-menu label:hover {
+            background: rgba(0,124,186,0.10);
+        }
+        #type-filter-menu .type-swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            flex: 0 0 auto;
+        }
+        #type-filter-menu .type-count {
+            margin-left: auto;
+            padding-left: 8px;
+            color: #888;
+        }
+    `;
+    document.head.appendChild(style);
+}
+injectMapControlStyles();
 
 function waitForMap() {
     return new Promise((resolve) => {
@@ -144,15 +277,26 @@ function getCategoryNameFromEvent(e) {
 }
 
 /**
- * Robust: Extract overlays mapping directly from the Leaflet control layers call that Folium emits.
+ * Robust: Extract the base layer and overlay mappings directly from the Leaflet control layers
+ * call that Folium emits.
  *
  * Folium typically generates something like:
  *   var layer_control_xxx = L.control.layers(base_layers_xxx, overlays_xxx, {...}).addTo(map_xxx);
  *
- * We parse the JS to find overlays_xxx and then read window[overlays_xxx], which is an object:
+ * We parse the JS to find both variables and read them from window. Each is an object:
  *   { "Running": feature_group_abc, "Cycling": feature_group_def, ... }
+ * Returns { baseLayers, overlays } (either may be null), or null when the call isn't found.
  */
-function getOverlaysObjectFromFoliumHtml() {
+function getLayerObjectsFromFoliumHtml() {
+    const resolve = (expr) => {
+        try {
+            const obj = expr.split('.').reduce((acc, key) => acc && acc[key], window);
+            return obj && typeof obj === 'object' ? obj : null;
+        } catch (_) {
+            return null;
+        }
+    };
+
     // Search script tags for a line containing L.control.layers( ... )
     const scripts = Array.from(document.querySelectorAll('script'));
     for (const s of scripts) {
@@ -164,17 +308,10 @@ function getOverlaysObjectFromFoliumHtml() {
         const re = /L\.control\.layers\(\s*([A-Za-z0-9_$.]+)\s*,\s*([A-Za-z0-9_$.]+)\s*,/m;
         const m = txt.match(re);
         if (m && m[2]) {
-            const overlaysVarExpr = m[2]; // usually a simple var name like overlays_xxx
-            // Resolve it from window if possible
-            let overlaysObj = null;
-            try {
-                overlaysObj = overlaysVarExpr.split('.').reduce((acc, key) => acc && acc[key], window);
-            } catch (_) {
-                overlaysObj = null;
-            }
-            if (overlaysObj && typeof overlaysObj === 'object') {
-                console.log('Found overlays object via', overlaysVarExpr, overlaysObj);
-                return overlaysObj;
+            const found = { baseLayers: resolve(m[1]), overlays: resolve(m[2]) };
+            if (found.overlays) {
+                console.log('Found layer objects via', m[1], m[2], found);
+                return found;
             }
         }
     }
@@ -194,11 +331,13 @@ function extractLayersFromFoliumOverlays(layerControlInfo) {
     const expectedCategories = manifest ? Object.keys(manifest.categories) : [];
     console.log('Expected categories:', expectedCategories);
 
-    const overlaysObj = getOverlaysObjectFromFoliumHtml();
-    if (!overlaysObj) {
+    const layerObjects = getLayerObjectsFromFoliumHtml();
+    if (!layerObjects) {
         console.error('Overlays object not found; cannot map layers robustly.');
         return false;
     }
+    const overlaysObj = layerObjects.overlays;
+    baseLayers = layerObjects.baseLayers || {};
 
     // overlaysObj may contain more overlays than we care about; filter to manifest categories.
     for (const [name, layer] of Object.entries(overlaysObj)) {
@@ -308,10 +447,12 @@ async function loadManifest() {
 
         setupMapEventListeners();
         initializeDateRangeSlider();
+        initializeLayerSelects();
         initializeToggleControl();
         initializeMapyAttribution();
         initializeAreaSelection();
         initializeTapSelection();
+        arrangeTopRightControls();
 
     } catch (error) {
         console.error('Error loading manifest:', error);
@@ -613,22 +754,10 @@ function initializeDateRangeSlider() {
                 gap: 4px;
                 margin-top: 4px;
             }
-            /* A phone has no room for all three: the preset drops to its own line. */
-            @media (max-width: 480px) {
-                #date-range-preset {
-                    order: 1;
-                    margin: 0 auto;
-                }
-            }
-            #date-range-slider-container select,
-            #date-range-slider-container input[type="date"] {
-                font: inherit;
-                font-size: 12px;
-                color: rgba(0, 0, 0, 0.8);
-                background: rgba(255, 255, 255, 0.7);
-                border: 1px solid rgba(0, 0, 0, 0.2);
-                border-radius: 4px;
-                padding: 1px 2px;
+            /* Too narrow for all three: the preset drops to its own line, centred. */
+            #date-range-slider-container .date-range-dates.stacked #date-range-preset {
+                order: 1;
+                margin: 0 auto;
             }
             /* Slim enough that both date fields share one row on a phone. */
             #date-range-slider-container input[type="date"]::-webkit-calendar-picker-indicator {
@@ -639,26 +768,19 @@ function initializeDateRangeSlider() {
         document.head.appendChild(style);
     }
 
-    const sliderContainer = document.createElement('div');
+    // The panel heads the top-left control stack, above the tiles/types dropdowns.
+    // It spans the map up to the button column in the top-right corner.
+    const sliderContainer = L.DomUtil.create('div', 'leaflet-control map-panel');
     sliderContainer.id = 'date-range-slider-container';
     sliderContainer.style.cssText = `
-        position: absolute;
-        top: 10px;
-        left: 140px;
-        right: 10px;
-        z-index: 1000;
-
-        background: rgba(255, 255, 255, 0.55);
-        backdrop-filter: blur(4px);
-        -webkit-backdrop-filter: blur(4px);
-
+        width: calc(100vw - 64px);
+        box-sizing: border-box;
         padding: 8px 10px;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.12);
-
         line-height: 1.1;
         overflow: hidden;
     `;
+    L.DomEvent.disableClickPropagation(sliderContainer);
+    L.DomEvent.disableScrollPropagation(sliderContainer);
 
     const option = ([value, label]) => `<option value="${value}">${label}</option>`;
     const years = [];
@@ -682,12 +804,26 @@ function initializeDateRangeSlider() {
             <input type="date" id="date-range-end" aria-label="To" min="${minIso}" max="${maxIso}">
         </div>
     `;
-    document.body.appendChild(sliderContainer);
+    mapInstance._controlCorners.topleft.prepend(sliderContainer);
 
     const slider = document.getElementById('date-range-slider');
     const presetSelect = document.getElementById('date-range-preset');
     const startInput = document.getElementById('date-range-start');
     const endInput = document.getElementById('date-range-end');
+
+    // The preset stays between the dates while all three fit on one line. CSS can't
+    // tell when a flex row wraps, so measure it: unstacked, a wrap pushes the end
+    // date down. Only width changes matter, which also skips the resize the class
+    // itself causes, and a hidden panel (width 0) is measured once it shows again.
+    const datesRow = sliderContainer.querySelector('.date-range-dates');
+    let measuredWidth = null;
+    new ResizeObserver(function() {
+        const width = datesRow.clientWidth;
+        if (!width || width === measuredWidth) return;
+        measuredWidth = width;
+        datesRow.classList.remove('stacked');
+        datesRow.classList.toggle('stacked', endInput.offsetTop - startInput.offsetTop > 5);
+    }).observe(datesRow);
 
     // Show [start, end] in every control and filter the map by it. The slider is
     // left alone when it is the source; its handles stop at the data's edges.
@@ -762,13 +898,142 @@ function initializeDateRangeSlider() {
     }
 }
 
+/**
+ * The tiles dropdown and the activity-types multiselect, under the date panel.
+ * They drive the same layers Folium's (hidden) layer control lists, by adding and
+ * removing them on the map; the control turns that into the usual overlayadd /
+ * overlayremove / baselayerchange events, so lazy loading and the Mapy.com logo
+ * work as before, and both widgets resync from those events.
+ */
+function initializeLayerSelects() {
+    if (!mapInstance) return;
+
+    const existing = document.getElementById('map-layer-selects');
+    if (existing) existing.remove();
+
+    const container = L.DomUtil.create('div', 'leaflet-control map-panel');
+    container.id = 'map-layer-selects';
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+
+    // --- Tiles: a plain select, shown only when there is a choice to make ---
+    const baseNames = Object.keys(baseLayers);
+    const tileSelect = L.DomUtil.create('select', '', container);
+    tileSelect.id = 'tile-layer-select';
+    tileSelect.setAttribute('aria-label', 'Map tiles');
+    baseNames.forEach(function(name) {
+        tileSelect.add(new Option(name, name));
+    });
+    if (baseNames.length < 2) tileSelect.style.display = 'none';
+
+    function syncTileSelect() {
+        const active = baseNames.find(name => mapInstance.hasLayer(baseLayers[name]));
+        if (active) tileSelect.value = active;
+    }
+    tileSelect.addEventListener('change', function() {
+        const chosen = baseLayers[tileSelect.value];
+        if (!chosen || mapInstance.hasLayer(chosen)) return;
+        // Remove the old base map first: the Mapy.com logo check on
+        // baselayerchange must no longer see it.
+        baseNames.forEach(function(name) {
+            if (baseLayers[name] !== chosen && mapInstance.hasLayer(baseLayers[name])) {
+                mapInstance.removeLayer(baseLayers[name]);
+            }
+        });
+        mapInstance.addLayer(chosen);
+    });
+
+    // --- Types: a button that opens a checkbox list ---
+    const categoryNames = Object.keys(layerGroups);
+    const typeWrap = L.DomUtil.create('div', '', container);
+    const typeButton = L.DomUtil.create('button', '', typeWrap);
+    typeButton.id = 'type-filter-button';
+    typeButton.type = 'button';
+    typeButton.setAttribute('aria-haspopup', 'true');
+    typeButton.setAttribute('aria-expanded', 'false');
+    const typeMenu = L.DomUtil.create('div', '', container);
+    typeMenu.id = 'type-filter-menu';
+
+    const actions = L.DomUtil.create('div', 'type-filter-actions', typeMenu);
+    const allButton = L.DomUtil.create('button', '', actions);
+    allButton.type = 'button';
+    allButton.textContent = 'All';
+    const noneButton = L.DomUtil.create('button', '', actions);
+    noneButton.type = 'button';
+    noneButton.textContent = 'None';
+
+    const checkboxes = {};
+    categoryNames.forEach(function(name) {
+        const info = (manifest.categories && manifest.categories[name]) || {};
+        const label = L.DomUtil.create('label', '', typeMenu);
+        const checkbox = L.DomUtil.create('input', '', label);
+        checkbox.type = 'checkbox';
+        checkbox.addEventListener('change', function() {
+            setCategoryShown(name, checkbox.checked);
+        });
+        const swatch = L.DomUtil.create('span', 'type-swatch', label);
+        swatch.style.background = info.color || '#999';
+        L.DomUtil.create('span', '', label).textContent = name;
+        L.DomUtil.create('span', 'type-count', label).textContent = info.activity_count || 0;
+        checkboxes[name] = checkbox;
+    });
+
+    function setCategoryShown(name, shown) {
+        const layer = layerGroups[name];
+        if (!layer || mapInstance.hasLayer(layer) === shown) return;
+        if (shown) mapInstance.addLayer(layer);
+        else mapInstance.removeLayer(layer);
+    }
+    allButton.addEventListener('click', () => categoryNames.forEach(n => setCategoryShown(n, true)));
+    noneButton.addEventListener('click', () => categoryNames.forEach(n => setCategoryShown(n, false)));
+
+    function syncTypeFilter() {
+        const shown = categoryNames.filter(name => mapInstance.hasLayer(layerGroups[name]));
+        categoryNames.forEach(function(name) {
+            checkboxes[name].checked = shown.includes(name);
+        });
+        let summary;
+        if (shown.length === categoryNames.length) summary = 'All types';
+        else if (shown.length === 0) summary = 'No types';
+        else if (shown.length <= 2) summary = shown.join(', ');
+        else summary = `${shown.length} types`;
+        typeButton.textContent = summary + ' \u25BE';
+        typeButton.title = shown.length ? shown.join(', ') : 'No activity types shown';
+    }
+
+    function setMenuOpen(open) {
+        typeMenu.classList.toggle('open', open);
+        typeButton.setAttribute('aria-expanded', String(open));
+    }
+    typeButton.addEventListener('click', function() {
+        setMenuOpen(!typeMenu.classList.contains('open'));
+    });
+    // Close on a press anywhere outside the dropdown, or on Escape.
+    document.addEventListener('pointerdown', function(e) {
+        if (!container.contains(e.target)) setMenuOpen(false);
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') setMenuOpen(false);
+    });
+
+    // Directly under the date panel.
+    const slider = document.getElementById('date-range-slider-container');
+    if (slider) slider.after(container);
+    else mapInstance._controlCorners.topleft.prepend(container);
+
+    syncTileSelect();
+    syncTypeFilter();
+    mapInstance.on('baselayerchange', syncTileSelect);
+    mapInstance.on('overlayadd overlayremove', syncTypeFilter);
+}
+
 function initializeToggleControl() {
     if (!mapInstance) return;
 
     // Create a custom control
     const ToggleControl = L.Control.extend({
         options: {
-            position: 'topleft'
+            position: 'topright'
         },
 
         onAdd: function(map) {
@@ -778,15 +1043,6 @@ function initializeToggleControl() {
             button.title = 'Toggle Controls';
             button.role = 'button';
             button.innerHTML = '<span style="font-size: 18px; line-height: 30px;">&#9776;</span>'; // Hamburger
-
-            button.style.width = '30px';
-            button.style.height = '30px';
-            button.style.textAlign = 'center';
-            button.style.display = 'block';
-            button.style.backgroundColor = 'white';
-            button.style.cursor = 'pointer';
-            button.style.textDecoration = 'none';
-            button.style.color = 'black';
 
             button.onclick = function(e) {
                 L.DomEvent.stop(e);
@@ -800,39 +1056,45 @@ function initializeToggleControl() {
     const toggleControl = new ToggleControl();
     mapInstance.addControl(toggleControl);
 
-    // Move it to the top of the stack in the top-left corner
+    // Move it to the top of the stack in the top-right corner
     const controlContainer = toggleControl.getContainer();
-    const corner = controlContainer.parentElement; // .leaflet-top.leaflet-left
+    const corner = controlContainer.parentElement; // .leaflet-top.leaflet-right
     if (corner) {
         corner.prepend(controlContainer);
     }
 }
 
+/**
+ * The top-right column, top to bottom: hamburger, area-select tool, zoom bar.
+ * Leaflet puts the zoom control in the top-left corner by default.
+ */
+function arrangeTopRightControls() {
+    const corner = mapInstance._controlCorners.topright;
+    const hamburger = document.querySelector('.leaflet-control-toggle-menu');
+    const column = [
+        hamburger && hamburger.parentElement,
+        document.getElementById('area-select-bar'),
+        mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
+    ].filter(Boolean);
+    column.reverse().forEach(el => corner.prepend(el));
+}
+
+let mapControlsFolded = false;
+
 function toggleMapControls() {
-    // Toggle Leaflet Zoom Control
-    const zoomControl = document.querySelector('.leaflet-control-zoom');
-    if (zoomControl) {
-        zoomControl.style.display = (zoomControl.style.display === 'none') ? '' : 'none';
-    }
-
-    // Toggle Leaflet Layer Control
-    const layerControl = document.querySelector('.leaflet-control-layers');
-    if (layerControl) {
-        layerControl.style.display = (layerControl.style.display === 'none') ? '' : 'none';
-    }
-
-    // Toggle Date Range Slider
-    const sliderContainer = document.getElementById('date-range-slider-container');
-    if (sliderContainer) {
-        sliderContainer.style.display = (sliderContainer.style.display === 'none') ? '' : 'none';
-    }
-
-    // Toggle the area-select tool. When embedded in the zoom bar it already folds
-    // with the zoom control above; this covers the standalone-bar fallback.
-    const areaSelectBar = document.getElementById('area-select-bar');
-    if (areaSelectBar) {
-        areaSelectBar.style.display = (areaSelectBar.style.display === 'none') ? '' : 'none';
-    }
+    // The hamburger folds everything but itself: the top-left corner (date panel,
+    // tiles/types dropdowns) and the buttons under it (area select, zoom).
+    mapControlsFolded = !mapControlsFolded;
+    const folded = [
+        mapInstance._controlCorners.topleft,
+        document.getElementById('area-select-bar'),
+        mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
+    ];
+    folded.forEach(function(el) {
+        if (el) el.style.display = mapControlsFolded ? 'none' : '';
+    });
+    const typeMenu = document.getElementById('type-filter-menu');
+    if (typeMenu) typeMenu.classList.remove('open');
 }
 
 /**
@@ -983,7 +1245,7 @@ function computeAreaSelection(bounds, mode) {
 function setAreaSelectArmed(armed) {
     areaSelectActive = armed;
     if (areaSelectButton) {
-        areaSelectButton.style.backgroundColor = armed ? '#cfe8ff' : 'white';
+        areaSelectButton.style.backgroundColor = armed ? 'rgba(207, 232, 255, 0.9)' : '';
     }
     const mapEl = mapInstance.getContainer();
     if (armed) {
@@ -1173,15 +1435,19 @@ function showSelectionDialog() {
         selection = computeTapSelection(tapSelectLatLng, tapSelectTolerancePx);
     }
 
+    // Below the date panel when it's shown, and left of the button column.
+    const panel = document.getElementById('date-range-slider-container');
+    const top = panel && panel.offsetParent ? Math.round(panel.getBoundingClientRect().bottom) + 10 : 10;
+
     const dialog = document.createElement('div');
     dialog.id = 'area-selection-dialog';
     dialog.style.cssText = `
         position: absolute;
-        top: 60px;
-        right: 10px;
+        top: ${top}px;
+        right: 60px;
         width: 340px;
-        max-width: calc(100vw - 20px);
-        max-height: calc(100vh - 80px);
+        max-width: calc(100vw - 70px);
+        max-height: calc(100vh - ${top + 20}px);
         z-index: 1001;
         display: flex;
         flex-direction: column;
@@ -1318,8 +1584,7 @@ function initializeAreaSelection() {
     button.title = 'Select area';
     button.role = 'button';
     button.innerHTML = AREA_SELECT_ICON;
-    button.style.cssText = 'display:flex;align-items:center;justify-content:center;' +
-        'cursor:pointer;text-decoration:none;color:black;';
+    button.style.cssText = 'display:flex;align-items:center;justify-content:center;cursor:pointer;';
     areaSelectButton = button;
     button.onclick = function(e) {
         L.DomEvent.stop(e);
@@ -1332,25 +1597,18 @@ function initializeAreaSelection() {
     };
     L.DomEvent.disableClickPropagation(button);
 
-    // Sit it in the zoom toolbar right below the +/- buttons. Being a child of the
-    // zoom control means it also folds away with the hamburger, which hides
-    // .leaflet-control-zoom (see toggleMapControls).
-    const zoomBar = mapInstance.getContainer().querySelector('.leaflet-control-zoom');
-    if (zoomBar) {
-        zoomBar.appendChild(button);
-    } else {
-        // Fallback: standalone bar next to the top-left controls.
-        const StandaloneControl = L.Control.extend({
-            options: { position: 'topleft' },
-            onAdd: function() {
-                const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-                container.id = 'area-select-bar';
-                container.appendChild(button);
-                return container;
-            }
-        });
-        mapInstance.addControl(new StandaloneControl());
-    }
+    // Its own bar between the hamburger and the zoom bar (arrangeTopRightControls);
+    // it folds away with the hamburger (see toggleMapControls).
+    const AreaSelectControl = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function() {
+            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+            container.id = 'area-select-bar';
+            container.appendChild(button);
+            return container;
+        }
+    });
+    mapInstance.addControl(new AreaSelectControl());
 
     const mapEl = mapInstance.getContainer();
     mapEl.addEventListener('pointerdown', onAreaSelectPointerDown);

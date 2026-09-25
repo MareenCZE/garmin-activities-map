@@ -229,3 +229,44 @@ def test_day_helpers(served_map, context):
     )
     assert r == {"roundTrip": "2024-02-29", "empty": None, "garbage": None,
                  "impossible": None, "consecutive": 1}
+
+
+def _date_row_boxes(page):
+    return {name: page.locator(f"#date-range-{name}").bounding_box()
+            for name in ("start", "preset", "end")}
+
+
+def _centre_x(box):
+    return box["x"] + box["width"] / 2
+
+
+@pytest.mark.parametrize("width", [1024, 390])
+def test_preset_sits_between_the_dates_when_they_fit(served_map, context, width):
+    page = _open(context, served_map)
+    page.set_viewport_size({"width": width, "height": 800})
+    page.wait_for_timeout(100)  # let the ResizeObserver run
+    b = _date_row_boxes(page)
+    assert abs(b["start"]["y"] - b["end"]["y"]) < 5
+    assert b["start"]["x"] + b["start"]["width"] <= b["preset"]["x"]
+    assert b["preset"]["x"] + b["preset"]["width"] <= b["end"]["x"]
+    # Centred in the row, i.e. midway between the two dates.
+    midway = (b["start"]["x"] + b["end"]["x"] + b["end"]["width"]) / 2
+    assert abs(_centre_x(b["preset"]) - midway) < 3
+
+
+def test_preset_gets_its_own_line_when_too_narrow(served_map, context):
+    page = _open(context, served_map)
+    page.set_viewport_size({"width": 300, "height": 800})
+    page.wait_for_timeout(100)
+    b = _date_row_boxes(page)
+    # Both dates on the first line, the preset centred under them.
+    assert abs(b["start"]["y"] - b["end"]["y"]) < 5
+    assert b["preset"]["y"] >= b["start"]["y"] + b["start"]["height"]
+    midway = (b["start"]["x"] + b["end"]["x"] + b["end"]["width"]) / 2
+    assert abs(_centre_x(b["preset"]) - midway) < 3
+
+    # Widening again puts it back between the dates.
+    page.set_viewport_size({"width": 1024, "height": 800})
+    page.wait_for_timeout(100)
+    b = _date_row_boxes(page)
+    assert abs(b["preset"]["y"] - b["start"]["y"]) < 5

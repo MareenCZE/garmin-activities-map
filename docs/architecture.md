@@ -97,7 +97,11 @@ history):
 ### Client-side behaviour (`templates/activity_loader_template.html`)
 Pure client JS drives the interactivity:
 - Waits for the Folium map + layer control, then robustly maps category names → Leaflet
-  layers by parsing the `L.control.layers(...)` overlays object (avoids DOM-order fragility).
+  layers by parsing the `L.control.layers(...)` base-layer and overlays objects (avoids
+  DOM-order fragility). The layer control itself is hidden: a tiles `<select>` and an
+  activity-types multiselect dropdown (`initializeLayerSelects`) add/remove the same layers,
+  and the hidden control turns that into `overlayadd`/`overlayremove`/`baselayerchange`
+  events, which drive lazy loading and resync both dropdowns.
 - Lazily fetches each category's JSON (on load if `show_on_load`, otherwise on overlay
   toggle), draws polylines with per-category colour, binds popups (name/date/type/distance/
   duration + Garmin Connect link), and does hover/popup highlighting (bright green).
@@ -106,11 +110,14 @@ Pure client JS drives the interactivity:
   native `<input type="date">` fields, kept in sync. It counts whole days as UTC day numbers
   (`isoDateToDay`/`dayToIsoDate`) so timezones and DST can't shift a date; presets are computed
   from the viewer's local "today", clamped to the data's date span, and the last-picked preset
-  is kept in `localStorage` (custom ranges are not). A hamburger **toggle control** shows/hides
-  zoom, layer, and date controls.
+  is kept in `localStorage` (custom ranges are not). The top-left corner stacks the date
+  panel and the tiles/types dropdowns under it. The top-right column holds a hamburger
+  **toggle control**, the area-select button and the zoom bar (`arrangeTopRightControls`); the
+  hamburger shows/hides everything but itself. The button bars share the panels' translucent,
+  rounded look.
 - An **area-selection tool** (`initializeAreaSelection`, gated by
-  `[activities].enable-area-selection`) adds a rectangle-draw button to the zoom toolbar (so it
-  folds away with the hamburger). The box is drawn from pointer events on the map container, not
+  `[activities].enable-area-selection`) adds a rectangle-draw button in its own bar between the
+  hamburger and the zoom bar (it folds away with the hamburger). The box is drawn from pointer events on the map container, not
   Leaflet's mouse events, because a touch drag fires no `mousedown`/`mousemove`; while armed the
   container gets `touch-action: none`, its `touchstart`/`touchmove` are `preventDefault`ed (iOS
   Safari ignores `touch-action` and would pan the page instead), a "Drag to select an area" hint

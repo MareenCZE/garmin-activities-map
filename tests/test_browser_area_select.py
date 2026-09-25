@@ -97,6 +97,13 @@ def _wait_loaded(page):
     )
 
 
+def _toggle_type(page, name):
+    """Flip one category in the activity-types dropdown, then close the dropdown."""
+    page.click("#type-filter-button")
+    page.locator("#type-filter-menu label", has_text=name).locator("input").click()
+    page.keyboard.press("Escape")
+
+
 def _drag_box_around_origin(page):
     """Drag a rectangle covering [49.99..50.01, 13.99..14.01] with a real mouse."""
     corners = page.evaluate(
@@ -232,8 +239,8 @@ def test_respects_type_filter(served_map):
             page.goto(served_map)
             _wait_loaded(page)
 
-            # Toggle the Running overlay off via the layer control.
-            page.get_by_text("Running", exact=True).click()
+            # Toggle the Running overlay off via the types dropdown.
+            _toggle_type(page, "Running")
             page.wait_for_function(
                 "() => Object.values(layerGroups).every(l => !mapInstance.hasLayer(l))",
                 timeout=10000,
@@ -290,8 +297,8 @@ def test_row_hover_highlights_matching_track(served_map):
             browser.close()
 
 
-def test_button_in_zoom_bar_and_folds_with_hamburger(served_map):
-    """The tool sits in the zoom toolbar and hides when the hamburger folds controls."""
+def test_button_above_zoom_bar_and_folds_with_hamburger(served_map):
+    """The tool sits between the hamburger and the zoom bar and folds with the hamburger."""
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -301,16 +308,17 @@ def test_button_in_zoom_bar_and_folds_with_hamburger(served_map):
             page.goto(served_map)
             _wait_loaded(page)
 
-            # Button is a child of the zoom control (next to +/-).
-            assert page.locator(".leaflet-control-zoom .leaflet-control-area-select").count() == 1
+            # Its own bar in the top-right column, right after the hamburger's.
+            bar = page.locator(".leaflet-top.leaflet-right #area-select-bar")
+            assert bar.locator(".leaflet-control-area-select").count() == 1
+            assert page.evaluate(
+                "() => document.getElementById('area-select-bar').previousElementSibling"
+                ".contains(document.querySelector('.leaflet-control-toggle-menu'))")
             assert page.locator(".leaflet-control-area-select").is_visible()
 
-            # Hamburger folds the zoom bar away -> the tool goes with it.
+            # Hamburger folds the tool away, together with the zoom bar.
             page.locator(".leaflet-control-toggle-menu").click()
-            page.wait_for_function(
-                "() => getComputedStyle(document.querySelector('.leaflet-control-zoom')).display === 'none'",
-                timeout=5000,
-            )
+            page.locator(".leaflet-control-zoom").wait_for(state="hidden", timeout=5000)
             assert not page.locator(".leaflet-control-area-select").is_visible()
         finally:
             browser.close()
@@ -331,12 +339,8 @@ def test_dialog_refreshes_on_layer_toggle(served_map):
             rows = page.locator("#area-selection-dialog .area-sel-row")
             assert rows.count() == 2
 
-            # "Running" appears in both the layer control and the dialog breakdown;
-            # target the layer-control toggle specifically.
-            layer_toggle = page.locator(".leaflet-control-layers").get_by_text("Running", exact=True)
-
             # Toggle Running off -> table empties (rectangle stays).
-            layer_toggle.click()
+            _toggle_type(page, "Running")
             page.wait_for_function(
                 "() => document.querySelectorAll('#area-selection-dialog .area-sel-row').length === 0",
                 timeout=5000,
@@ -344,7 +348,7 @@ def test_dialog_refreshes_on_layer_toggle(served_map):
             assert page.locator("#area-selection-dialog").count() == 1  # dialog still open
 
             # Toggle it back on -> rows return.
-            layer_toggle.click()
+            _toggle_type(page, "Running")
             page.wait_for_function(
                 "() => document.querySelectorAll('#area-selection-dialog .area-sel-row').length === 2",
                 timeout=5000,
@@ -444,7 +448,7 @@ def test_tool_absent_when_disabled(config, tmp_path):
             try:
                 page = browser.new_page()
                 page.goto(f"http://127.0.0.1:{port}/activities_map.html")
-                page.wait_for_selector(".leaflet-control-layers", timeout=20000)
+                page.wait_for_selector("#type-filter-button", timeout=20000)
                 page.wait_for_function(
                     "() => typeof mapInstance !== 'undefined' && mapInstance !== null",
                     timeout=20000,
