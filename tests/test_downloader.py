@@ -17,13 +17,16 @@ TOP_LEVEL = {
     "distance": 5321.0,   # metres
     "duration": 1830.0,   # seconds
     "activityName": "Morning Run",
+    "elevationGain": 312.6,  # metres
+    "elevationLoss": 298.0,
 }
 
 # shape returned by api.get_activity() (single-activity endpoint)
 SUMMARY_DTO = {
     "activityId": 99,
     "summaryDTO": {"startTimeLocal": "2024-05-01T07:30:00.0",
-                   "distance": 1000, "duration": 60},
+                   "distance": 1000, "duration": 60,
+                   "elevationGain": 45.0, "elevationLoss": 44.4},
     "activityTypeDTO": {"typeKey": "cycling"},
     "activityName": "Commute",
 }
@@ -41,6 +44,7 @@ class TestMapToObject:
         assert a.name == "Morning Run"
         assert a.filename == "2024-05-01_123_running"
         assert a.has_gps_data is False
+        assert (a.elevation_gain, a.elevation_loss) == (313, 298)  # whole metres
 
     def test_summary_dto_shape(self, storage_env):
         a = downloader.map_to_object(SUMMARY_DTO)
@@ -49,6 +53,12 @@ class TestMapToObject:
         assert a.duration == 1.0
         assert a.activity_type == "cycling"
         assert a.date == "2024-05-01"
+        assert (a.elevation_gain, a.elevation_loss) == (45, 44)
+
+    def test_no_elevation_recorded(self, storage_env):
+        activity = {k: v for k, v in TOP_LEVEL.items() if not k.startswith("elevation")}
+        a = downloader.map_to_object(activity)
+        assert a.elevation_gain is None and a.elevation_loss is None
 
     def test_rounding(self, storage_env):
         activity = dict(TOP_LEVEL, distance=1234.5, duration=3661)
@@ -181,6 +191,38 @@ class TestDownloadActivities:
         api = FakeApi([])
         downloader.download_activities(api)
         assert api.requested_range[0] == "2024-03-15"  # last stored date
+
+
+    def test_upgrades_old_database_before_appending(self, storage_env, monkeypatch):
+        with open(storage_env.db_path, "w", newline="") as f:
+            f.write("date,time,type,duration,distance,activity_id,name,filename,has_gps_data\r\n"
+                    "2024-01-01,07:30,running,30.0,5.0,1,Old,2024-01-01_1_running,False\r\n")
+        monkeypatch.setattr(downloader, "save_json_and_gpx", lambda *a, **k: a[1])
+        monkeypatch.setattr(storage, "create_appender",
+                            lambda filename=str(storage_env.db_path): open(filename, "a", newline=""))
+
+        downloader.download_activities(FakeApi([dict(TOP_LEVEL, activityId=2)]), from_date="2024-01-01")
+
+        loaded = storage.load_activities_from_csv(load_coordinates=False)
+        assert [(a.activity_id, a.elevation_gain) for a in loaded] == [(1, None), (2, 313)]
+
+
+class TestRegenerateCsv:
+    def test_fills_time_and_elevation_from_stored_json(self, storage_env):
+        import json
+        storage.write_database([
+            make_activity(storage, activity_id=1, time="", filename="a"),
+            make_activity(storage, activity_id=2, time="", filename="b"),
+        ], storage_env.db_path)
+        (storage_env.json_dir / "a.json").write_text(json.dumps(TOP_LEVEL))
+        (storage_env.json_dir / "b.json").write_text(json.dumps(
+            {"summaryDTO": {"startTimeLocal": "2024-05-01T18:05:00.0"}}))  # nothing recorded
+
+        downloader.regenerate_csv()
+
+        loaded = storage.load_activities_from_csv(load_coordinates=False)
+        assert [(a.time, a.elevation_gain, a.elevation_loss) for a in loaded] == [
+            ("07:30", 313, 298), ("18:05", None, None)]
 
 
 class TestLoginGuard:

@@ -36,8 +36,8 @@ The data lives under `data/` and flows from richest/largest to smallest:
 One row per activity. This is the "golden source" for map generation.
 
 ```
-date,time,type,duration,distance,activity_id,name,filename,has_gps_data
-2024-01-15,08:00,running,45.0,10.0,0000000000,"Activity name",2024-01-15_0000000000_running,True
+date,time,type,duration,distance,activity_id,name,filename,has_gps_data,elevation_gain,elevation_loss
+2024-01-15,08:00,running,45.0,10.0,0000000000,"Activity name",2024-01-15_0000000000_running,True,120,118
 ```
 
 - `duration` is in **minutes**, `distance` in **km** (converted from Garmin's seconds/metres
@@ -45,6 +45,10 @@ date,time,type,duration,distance,activity_id,name,filename,has_gps_data
 - `filename` is the shared stem for that activity's json/gpx/coordinates files, built as
   `{date}_{activity_id}_{type}`.
 - `has_gps_data` is a stringified bool (`"True"`/`"False"`).
+- `elevation_gain` / `elevation_loss` are total ascent / descent in whole **metres**, empty when
+  Garmin recorded none (mostly indoor and non-GPS activities). A database written before these
+  columns existed is rewritten with them (after a backup) at the start of the next download;
+  `REGENERATE_CSV` backfills the values from the stored JSON.
 
 ### 2. `data/json/{stem}.json` — raw Garmin API response
 The full, unmodified activity object as returned by Garmin Connect. Kept as a backup and to
@@ -84,8 +88,9 @@ history):
   Garmin `type_key`s to a display name + colour. Unmapped types fall into the first ("Other")
   category.
 - `output/data/{category}_activities.json` — one file per category, an array of minimal
-  activity objects: `{coordinates, color, date, name, activity_type, distance, duration,
-  activity_id}`. Written compact (no whitespace).
+  activity objects: `{coordinates, color, date, time, name, activity_type, distance, duration,
+  activity_id}`, plus `elevation_gain` / `elevation_loss` when recorded. Written compact (no
+  whitespace).
 - `output/data/manifest.json` — lists categories (data file, count, colour, `show_on_load`),
   the overall `date_range`, and a `config` block (`enable_highlighting`,
   `enable_area_selection`, `garmin_connect_url`).
@@ -106,7 +111,7 @@ Pure client JS drives the interactivity:
   toggle), draws polylines with per-category colour, binds popups
   (`createActivityPopupHtml`: name; type icon, date/time in the browser's locale and a Garmin
   Connect link icon; distance and duration, plus total ascent/descent when the activity data
-  carries `elevation_gain`/`elevation_loss`, which the generated data doesn't yet), and does
+  carries `elevation_gain`/`elevation_loss`), and does
   hover/popup highlighting (bright green). The popup icons are Material Symbols (Apache 2.0)
   inlined as SVG paths; `ACTIVITY_TYPE_ICONS` maps Garmin `type_key`s to them. An open
   popup can be dragged aside by its title (`enablePopupDragging`, Leaflet's `L.Draggable`):

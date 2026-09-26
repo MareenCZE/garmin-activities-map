@@ -27,6 +27,7 @@ def download_activities(api: Garmin, from_date=None, to_date=None):
     """
 
     storage.init_directories()
+    storage.upgrade_database_header()
     existing_activities = storage.load_activities_from_csv(False)
 
     if not from_date:
@@ -82,7 +83,16 @@ def map_to_object(api_activity):
                             filename=activity_filename,
                             has_gps_data=False,
                             activity_type=activity_type,
-                            name=api_activity.get('activityName'))
+                            name=api_activity.get('activityName'),
+                            elevation_gain=get_summary_field(api_activity, 'elevationGain'),
+                            elevation_loss=get_summary_field(api_activity, 'elevationLoss'))
+
+
+def get_summary_field(api_activity, key):
+    """A field of the activity list response, or of summaryDTO in the single-activity one; None if absent."""
+    if key in api_activity:
+        return api_activity[key]
+    return (api_activity.get('summaryDTO') or {}).get(key)
 
 
 def save_json_and_gpx(api: Garmin, activity: storage.Activity, api_activity):
@@ -176,10 +186,12 @@ def regenerate_csv():
             exit(1)
         with open(activity.json_filename, mode='r') as json_file:
             activity_json = json.load(json_file)
-        # this piece of code was used to add a time field to the CSV database
+        # fills the fields added to the CSV database over time from the stored JSON
         # change it to whatever operation is needed
         time_object = get_datetime_from_activity(activity_json)
         activity.time = time_object.strftime("%H:%M")
+        activity.elevation_gain = storage.optional_metres(get_summary_field(activity_json, 'elevationGain'))
+        activity.elevation_loss = storage.optional_metres(get_summary_field(activity_json, 'elevationLoss'))
 
     storage.write_database(existing_activities)
 

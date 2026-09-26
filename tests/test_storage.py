@@ -14,6 +14,13 @@ def write_coords_file(path, rows):
         w.writerows(rows)
 
 
+def write_old_format_database(path):
+    """A database written before the elevation columns existed."""
+    with open(path, "w", newline="") as f:
+        f.write("date,time,type,duration,distance,activity_id,name,filename,has_gps_data\r\n"
+                "2024-01-01,07:30,running,30.0,5.0,1,Old,2024-01-01_1_running,False\r\n")
+
+
 class TestActivity:
     def test_casts_distance_and_duration_to_float(self, storage_env):
         a = make_activity(storage, distance="12.5", duration="45")
@@ -42,6 +49,16 @@ class TestActivity:
         write_coords_file(a.coords_filename, [[1.0, 2.0]])
         a.load_coordinates()
         assert a.coordinates == []
+
+    def test_elevation_rounds_to_whole_metres(self, storage_env):
+        a = make_activity(storage, elevation_gain="312.6", elevation_loss=298.2)
+        assert a.elevation_gain == 313
+        assert a.elevation_loss == 298
+
+    def test_elevation_missing_is_none(self, storage_env):
+        a = make_activity(storage, elevation_gain="")
+        assert a.elevation_gain is None
+        assert a.elevation_loss is None
 
     def test_str_contains_id_and_name(self, storage_env):
         a = make_activity(storage, activity_id=42, name="Ride")
@@ -80,6 +97,21 @@ class TestDatabaseRoundTrip:
         assert loaded[1].has_gps_data is True
         assert loaded[0].has_gps_data is False
 
+    def test_elevation_round_trips_including_missing(self, storage_env):
+        storage.write_database([
+            make_activity(storage, activity_id=1, elevation_gain=312, elevation_loss=0),
+            make_activity(storage, activity_id=2),
+        ], storage_env.db_path)
+        loaded = storage.load_activities_from_csv(load_coordinates=False)
+        assert (loaded[0].elevation_gain, loaded[0].elevation_loss) == (312, 0)
+        assert (loaded[1].elevation_gain, loaded[1].elevation_loss) == (None, None)
+
+    def test_loads_database_without_elevation_columns(self, storage_env):
+        write_old_format_database(storage_env.db_path)
+        loaded = storage.load_activities_from_csv(load_coordinates=False)
+        assert loaded[0].activity_id == 1
+        assert loaded[0].elevation_gain is None
+
     def test_loaded_ids_are_ints(self, storage_env):
         storage.write_database([make_activity(storage, activity_id=15685583510)],
                                storage_env.db_path)
@@ -105,6 +137,27 @@ class TestDatabaseRoundTrip:
 
         loaded = storage.load_activities_from_csv(load_coordinates=True)
         assert loaded[0].coordinates == [[48.0, 16.0]]
+
+
+class TestUpgradeDatabaseHeader:
+    def test_adds_missing_columns_and_backs_up(self, storage_env):
+        write_old_format_database(storage_env.db_path)
+        storage.upgrade_database_header()
+
+        with open(storage_env.db_path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert list(rows[0].keys()) == storage.FIELDNAMES
+        assert rows[0]["name"] == "Old" and rows[0]["elevation_gain"] == ""
+        assert len(list(storage_env.tmp_path.glob("activities_list.csv.*"))) == 1
+
+    def test_current_header_is_left_alone(self, storage_env):
+        storage.write_database([make_activity(storage)], storage_env.db_path)
+        storage.upgrade_database_header()
+        assert list(storage_env.tmp_path.glob("activities_list.csv.*")) == []
+
+    def test_missing_database_is_noop(self, storage_env):
+        storage.upgrade_database_header()
+        assert not storage_env.db_path.exists()
 
 
 class TestResortDatabase:

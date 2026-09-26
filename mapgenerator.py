@@ -216,12 +216,18 @@ def create_activity_data_files(activities, output_dir):
             'coordinates': activity.coordinates,
             'color': mapping.color,
             'date': activity.date,
+            'time': activity.time,
             'name': activity.name,
             'activity_type': activity.activity_type,
             'distance': activity.distance,
             'duration': activity.duration,
             'activity_id': activity.activity_id
         }
+        # left out when Garmin recorded no elevation; the popup then omits ascent/descent
+        if activity.elevation_gain is not None:
+            activity_data['elevation_gain'] = activity.elevation_gain
+        if activity.elevation_loss is not None:
+            activity_data['elevation_loss'] = activity.elevation_loss
 
         categories[mapping.name]['activities'].append(activity_data)
 

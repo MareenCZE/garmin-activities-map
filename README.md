@@ -21,8 +21,8 @@ Example with a dark background map:
 
 ![Black map](images/black.png)
 
-Hovering over an activity highlights it. Clicking an activity opens a popup with basic information about the activity and a link to Garmin
-Connect. The popup can be dragged aside by its title when it covers something. The click doesn't have to hit the thin line exactly: anything within a few pixels counts
+Hovering over an activity highlights it. Clicking an activity opens a popup with its start time, distance, duration, total ascent/descent
+(when Garmin recorded it) and a link to Garmin Connect. The popup can be dragged aside by its title when it covers something. The click doesn't have to hit the thin line exactly: anything within a few pixels counts
 (about 20 px for a finger on a touch screen, 6 px for a mouse). Where several tracks pass through the
 clicked spot, a list of them is shown instead, to pick from. With a mouse, picking one closes the
 list; on a touch screen it stays open until the next tap on the map:
@@ -228,5 +228,3 @@ remove them**:
   retired, so the login needs to move to whatever replaces it
 * docs: revisit the documentation — change the tone of `docs/architecture.md` and
   improve this README.
-* popup: the activity popup can already show the start time and total ascent/descent, but
-  the map data doesn't carry them yet (`time`, `elevation_gain`, `elevation_loss`).

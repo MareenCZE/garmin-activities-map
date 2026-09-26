@@ -40,9 +40,9 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def _make_track(activity_id, name, coords, date="2024-05-01"):
+def _make_track(activity_id, name, coords, date="2024-05-01", elevation_gain=None, elevation_loss=None):
     a = storage.Activity(activity_id, 5.0, 42.0, date, "07:30",
-                          f"f{activity_id}", True, "running", name)
+                          f"f{activity_id}", True, "running", name, elevation_gain, elevation_loss)
     a.coordinates = coords
     return a
 
@@ -65,7 +65,8 @@ def served_map(config, tmp_path):
     # Distinct dates so the newest-first display order (Bravo, Alpha) differs from
     # the collection order (Alpha, Bravo) — the case that exposed the row/highlight
     # index mismatch bug.
-    alpha = _make_track(1, "Alpha", [[50.000, 14.000], [50.005, 14.005]], date="2024-05-01")
+    alpha = _make_track(1, "Alpha", [[50.000, 14.000], [50.005, 14.005]], date="2024-05-01",
+                        elevation_gain=120, elevation_loss=115)
     bravo = _make_track(2, "Bravo", [[50.000, 14.000], [50.200, 14.300]], date="2024-06-01")
 
     out_html = tmp_path / "activities_map.html"
@@ -415,13 +416,13 @@ def test_activity_popup_shows_details_and_garmin_link(served_map):
             popup.wait_for(timeout=10000)
             text = popup.inner_text()
             assert "Alpha" in text
-            assert "Wed, 1 May 2024" in text      # date in the page's locale
+            assert "Wed, 1 May 2024, 7:30" in text   # start in the page's locale
             assert "5 km" in text                 # distance
             assert "42 min" in text               # 42.0 min
             # The type is an icon, named for screen readers and in its tooltip.
             assert popup.locator("svg[aria-label='Running'] title").text_content() == "Running"
-            # The map data carries no elevation yet, so the ascent/descent row is left out.
-            assert popup.locator("[aria-label='Total ascent'], [aria-label='Total descent']").count() == 0
+            # Ascent and descent come through the generated map data.
+            assert "120 m" in text and "115 m" in text
             # The link icon opens the activity in Garmin Connect.
             assert popup.locator("a[href*='connect.garmin.com']").count() == 1
         finally:
@@ -429,7 +430,7 @@ def test_activity_popup_shows_details_and_garmin_link(served_map):
 
 
 def test_activity_popup_formats_time_and_elevation(served_map):
-    """Fields the map data doesn't carry yet (start time, elevation) show once present."""
+    """Start time and elevation are formatted, and left out when the data lacks them."""
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -466,6 +467,8 @@ def test_activity_popup_formats_time_and_elevation(served_map):
             assert page.locator("svg[aria-label='Paragliding'] path").count() == 1
             assert "not-a-date" in page.locator(".ap").inner_text()
             assert page.locator("a").count() == 0
+            # No elevation recorded, so the ascent/descent row is left out.
+            assert page.locator("[aria-label='Total ascent'], [aria-label='Total descent']").count() == 0
         finally:
             browser.close()
 

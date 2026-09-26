@@ -136,12 +136,23 @@ class TestCreateActivityDataFiles:
             "coordinates": [[48.0, 16.0]],
             "color": "magenta",
             "date": "2024-01-01",
+            "time": "07:30",
             "name": "R",
             "activity_type": "running",
             "distance": 5.0,
             "duration": 30.0,
             "activity_id": 7,
         }
+
+    def test_activity_payload_carries_elevation_when_recorded(self, storage_env, mapping_config):
+        a = make_activity(storage, activity_id=7, activity_type="running", filename="a",
+                          elevation_gain=312, elevation_loss=0)
+        a.coordinates = [[0.1, 0.2]]
+        out_dir = storage_env.tmp_path / "output"
+        mapgenerator.create_activity_data_files([a], str(out_dir))
+        payload = json.loads((out_dir / "data" / "running_activities.json").read_text())[0]
+        assert payload["elevation_gain"] == 312
+        assert payload["elevation_loss"] == 0  # a flat activity keeps its zero
 
     def test_empty_activities_uses_epoch_date_range(self, storage_env, mapping_config):
         out_dir = storage_env.tmp_path / "output"
