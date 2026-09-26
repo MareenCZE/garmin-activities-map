@@ -103,8 +103,12 @@ Pure client JS drives the interactivity:
   and the hidden control turns that into `overlayadd`/`overlayremove`/`baselayerchange`
   events, which drive lazy loading and resync both dropdowns.
 - Lazily fetches each category's JSON (on load if `show_on_load`, otherwise on overlay
-  toggle), draws polylines with per-category colour, binds popups (name/date/type/distance/
-  duration + Garmin Connect link), and does hover/popup highlighting (bright green).
+  toggle), draws polylines with per-category colour, binds popups
+  (`createActivityPopupHtml`: name; type icon, date/time in the browser's locale and a Garmin
+  Connect link icon; distance and duration, plus total ascent/descent when the activity data
+  carries `elevation_gain`/`elevation_loss`, which the generated data doesn't yet), and does
+  hover/popup highlighting (bright green). The popup icons are Material Symbols (Apache 2.0)
+  inlined as SVG paths; `ACTIVITY_TYPE_ICONS` maps Garmin `type_key`s to them.
 - A **date-range panel** (`initializeDateRangeSlider`) filters visible tracks by date: a
   noUiSlider, a preset `<select>` (relative ranges plus one entry per year in the data) and two
   native `<input type="date">` fields, kept in sync. It counts whole days as UTC day numbers

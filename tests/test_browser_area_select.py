@@ -142,7 +142,7 @@ def test_rectangle_selects_and_summarizes_activities(served_map):
             assert "2 activities" in header
             # Summary carries distance + duration totals (2 x 5km, 2 x 42min).
             assert "10.0 km" in header
-            assert "1h 24min" in header
+            assert "1 h 24 min" in header
             # Each row exposes a Garmin Connect link.
             assert dialog.locator(".area-sel-row a[href*='connect.garmin.com']").count() == 2
 
@@ -388,15 +388,16 @@ def test_dialog_refreshes_on_date_filter(served_map):
 def test_activity_popup_shows_details_and_garmin_link(served_map):
     """Clicking a track opens a popup with its stats and a Garmin Connect link.
 
-    Exercises createActivityPopupHtml + garminActivityLink, the one core piece of
-    map JS the other browser tests don't assert on.
+    Exercises createActivityPopupHtml, the one core piece of map JS the other
+    browser tests don't assert on. The page runs in en-GB so the locale-formatted
+    date and numbers are predictable.
     """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         browser = _launch(p)
         try:
-            page = browser.new_page()
+            page = browser.new_page(locale="en-GB")
             page.goto(served_map)
             _wait_loaded(page)
 
@@ -414,11 +415,57 @@ def test_activity_popup_shows_details_and_garmin_link(served_map):
             popup.wait_for(timeout=10000)
             text = popup.inner_text()
             assert "Alpha" in text
-            assert "2024-05-01" in text          # date
-            assert "5" in text                    # distance (km)
-            assert "42min" in text                # 42.0 min formatted by createActivityPopupHtml
-            # Activity id links to Garmin Connect.
+            assert "Wed, 1 May 2024" in text      # date in the page's locale
+            assert "5 km" in text                 # distance
+            assert "42 min" in text               # 42.0 min
+            # The type is an icon, named for screen readers and in its tooltip.
+            assert popup.locator("svg[aria-label='Running'] title").text_content() == "Running"
+            # The map data carries no elevation yet, so the ascent/descent row is left out.
+            assert popup.locator("[aria-label='Total ascent'], [aria-label='Total descent']").count() == 0
+            # The link icon opens the activity in Garmin Connect.
             assert popup.locator("a[href*='connect.garmin.com']").count() == 1
+        finally:
+            browser.close()
+
+
+def test_activity_popup_formats_time_and_elevation(served_map):
+    """Fields the map data doesn't carry yet (start time, elevation) show once present."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page = browser.new_page(locale="en-GB")
+            page.goto(served_map)
+            _wait_loaded(page)
+
+            html = page.evaluate(
+                """() => createActivityPopupHtml({
+                    name: 'Test Ride', activity_type: 'gravel_cycling', date: '2024-05-01',
+                    time: '7:05', distance: 42.18, duration: 102.5,
+                    elevation_gain: 1024, elevation_loss: 998, activity_id: 3,
+                }, 'https://connect.garmin.com/modern/activity/')"""
+            )
+            page.set_content(html)
+            text = page.locator(".ap").inner_text()
+            assert "Wed, 1 May 2024, 7:05" in text
+            assert "42.2 km" in text
+            assert "1 h 42 min" in text
+            assert "1,024 m" in text
+            assert "998 m" in text
+            assert page.locator("svg[aria-label='Gravel cycling']").count() == 1
+
+            # A type without its own icon still gets one, labelled with the type.
+            html = page.evaluate(
+                """() => createActivityPopupHtml({
+                    name: 'Odd', activity_type: 'paragliding_v2', date: 'not-a-date',
+                    distance: 0, duration: 5, activity_id: 4,
+                }, null)"""
+            )
+            page.set_content(html)
+            assert page.locator("svg[aria-label='Paragliding'] path").count() == 1
+            assert "not-a-date" in page.locator(".ap").inner_text()
+            assert page.locator("a").count() == 0
         finally:
             browser.close()
 

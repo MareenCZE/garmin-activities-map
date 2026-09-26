@@ -368,35 +368,141 @@ function extractLayersFromFoliumOverlays(layerControlInfo) {
     return mapped.length > 0;
 }
 
-function createActivityPopupHtml(activity, garminConnectUrl) {
-    const durationMinutes = Math.floor(activity.duration);
-    const hours = Math.floor(durationMinutes / 60);
-    const minutes = durationMinutes % 60;
-    const durationFormatted = hours > 0 ? `${hours}h ${minutes}min` : `${minutes}min`;
+/**
+ * Icons of the activity popup: Material Symbols (Outlined, 20px), Apache License 2.0,
+ * https://github.com/google/material-design-icons. Inlined as SVG path data so the
+ * popup needs no icon font. The paths use the 0 -960 960 960 view box.
+ */
+const POPUP_ICON_PATHS = {
+    directions_bike: 'M200-80q-83 0-141.5-58.5T0-280q0-83 58.5-141.5T200-480q83 0 141.5 58.5T400-280q0 83-58.5 141.5T200-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Zm155-5v-200L312-512q-13-10-18.5-24.5T288-568q0-16 6.5-30.5T312-624l112-112q10-13 24.5-18.5T480-760q17 0 33.5 6.5T544-736l76 76q28 28 64 44t76 16v80q-57 0-108.5-22T560-604l-32-32-96 96 88 92v248h-80Zm123.5-563.5Q540-787 540-820t23.5-56.5Q587-900 620-900t56.5 23.5Q700-853 700-820t-23.5 56.5Q653-740 620-740t-56.5-23.5ZM760-80q-83 0-141.5-58.5T560-280q0-83 58.5-141.5T760-480q83 0 141.5 58.5T960-280q0 83-58.5 141.5T760-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Z',
+    directions_run: 'M552-96v-213l-76-75-32 160-252-51 14-70 181 36 52-263-79 34v106h-72v-154l185-78q9-4 18.5-6t19.5-2q27 0 48.5 12.5T595-623l14 23q30 51 68 73.5t91 22.5v72q-57 0-106.5-25T577-528l-23 120 70 70v242h-72Zm-35.5-624.5Q492-745 492-780t24.5-59.5Q541-864 576-864t59.5 24.5Q660-815 660-780t-24.5 59.5Q611-696 576-696t-59.5-24.5Z',
+    directions_walk: 'm298-96 93-476-79 34v106h-72v-154l185-78q10-4 19.5-6t18.5-2q26 0 46 11.5t34 31.5l9 13q23 35 51.5 73.5T720-504v72q-65 0-115.5-24T527-522l-21 114 70 70v242h-72v-215l-73-56-62 271h-71Zm170.5-624.5Q444-745 444-780t24.5-59.5Q493-864 528-864t59.5 24.5Q612-815 612-780t-24.5 59.5Q563-696 528-696t-59.5-24.5Z',
+    downhill_skiing: 'M720-48q-27 0-53-5t-50-14L96-254l16-46 273 99 74-195-149-141q-27-25-21.5-61.5T328-654l140-80q15-9 31.5-10t31.5 6q15 6 26.5 19t16.5 30l12 47q11 45 42 77.5t76 44.5l18-56 46 15-40 121q-78-13-130-53.5T523-600l-103 60 124 124-91 239 125 45 89-273q11 3 23.5 5t23.5 4l-90 280 16 6q18 8 38 11t42 3q29 0 56-6.5t52-19.5l36 36q-32 18-68.5 28T720-48ZM600.5-720.5Q576-745 576-780t24.5-59.5Q625-864 660-864t59.5 24.5Q744-815 744-780t-24.5 59.5Q695-696 660-696t-59.5-24.5Z',
+    ecg_heart: 'M480-481Zm-.11 337q-16.89 0-32.39-6.5T421-169L163-409q-35-32-51.5-75T95-575q0-98.16 64.44-169.58Q223.89-816 320.07-816q46.17 0 87.05 19Q448-778 480-745q31-34 72.5-52.5t87.46-18.5q95.76 0 160.4 71.28T865-575.2q0 47.2-16 90.2t-50 75L539-168q-12.2 12-27.21 18-15.01 6-31.9 6ZM528-624q8.93 0 16.96 4 8.04 4 13.04 12l61 92h165q5-14 7-29.19 2-15.19 2-30.81 0-67-43.71-117.5Q705.57-744 640-744q-30.3 0-58.15 13-27.85 13-48.41 35.12L507-668q-4.52 5.08-11.76 8.04Q488-657 480-657t-14.55-2.96q-6.54-2.96-11.45-8.04l-27-28.44Q406-719 378.64-731.5 351.27-744 320-744q-65.57 0-109.29 50.2Q167-643.59 167-575q0 15.28 2.5 30.14Q172-530 177-516h183q8.93 0 16.96 4 8.04 4 13.17 12.27L426-446l69-157q5-10 13.65-15.5 8.64-5.5 19.35-5.5Zm6 111-69 156q-5 10-13.5 15.5t-19.91 5.5q-8.79 0-16.69-4-7.9-4-12.9-12l-61-92H230l237.99 221.13q2.01 1.87 5.51 3.37t6.5 1.5q3 0 6.5-1.5t5.51-3.37L729-444H600q-8.93 0-16.96-3.5Q575-451 570-459l-36-54Z',
+    fitness_center: 'm531-96-51-51 141-141-333-333-141 141-51-51 51-51-51-51 90-90-67-68 50-50 68 67 90-90 51 51 51-51 51 51-141 141 333 333 141-141 51 51-51 51 51 51-90 90 67 68-50 50-68-67-90 90-51-51-51 51Z',
+    hiking: 'm298-96 101-516q5-26 24-42t46-16q20 0 41 11t32 28l16 26q32 50 56.5 71t57.5 26v-68h48v480h-48v-341q-43-9-79.5-32.5T529-528l-23 120 70 70v242h-72v-213l-76-75-57 288h-73Zm16-333-79-15q-10-2-15.5-10.5T216-473l28-141q6-30 30.5-46.5T328-671l32 7-46 235Zm154.5-291.5Q444-745 444-780t24.5-59.5Q493-864 528-864t59.5 24.5Q612-815 612-780t-24.5 59.5Q563-696 528-696t-59.5-24.5Z',
+    kayaking: 'M96-48v-72h24q32 0 63-12.5t57-35.5q27 23 57.5 35.5T360-120q32 0 62.5-12.5T480-168q27 23 57.5 35.5T600-120q32 0 62.5-12.5T720-168q26 23 57 35.5t63 12.5h24v72h-24q-31 0-61-7.5T720-77q-28 14-58 21t-62 7q-32 0-62-7t-58-21q-29 14-58.5 21T360-49q-31 0-61-7t-59-21q-29 14-59 21.5T120-48H96Zm264-144q-32 0-63.5-19T240-264q-13 19-29.5 33T176-207q-41-10-89.5-25T0-264q63-28 142-48.5T288-344l51-158q10-31 42.5-44t60.5 3l96 53 117-62 64-144-18-48 54-120 109 49-54 120-47 18-145 325q80 10 174 32.5T960-264q-38 17-86.5 32T784-207q-18-10-34.5-24T720-264q-25 34-56.5 53T600-192q-32 0-63.5-19T480-264q-25 34-56.5 53T360-192Zm208-165 39-88-70 38-65-37-28 85q9 0 18-.5t18-.5q23 0 45 .5t43 2.5ZM408.5-600.5Q384-625 384-660t24.5-59.5Q433-744 468-744t59.5 24.5Q552-695 552-660t-24.5 59.5Q503-576 468-576t-59.5-24.5Z',
+    nordic_walking: 'm173-96 67-288h49L222-96h-49Zm125 0 93-476-79 33v107h-72v-154l185-78q33-14 67.5-3.5T548-622l15 26q20 33 50 62.5T720-504v72q-59 0-108.5-26T529-528l-23 120 70 70v242h-72v-213l-76-76-57 289h-73Zm230-600q-35 0-59.5-24.5T444-780q0-35 24.5-59.5T528-864q35 0 59.5 24.5T612-780q0 35-24.5 59.5T528-696ZM672-96v-288h48v288h-48Z',
+    open_in_new: 'M216-144q-29.7 0-50.85-21.15Q144-186.3 144-216v-528q0-29.7 21.15-50.85Q186.3-816 216-816h264v72H216v528h528v-264h72v264q0 29.7-21.15 50.85Q773.7-144 744-144H216Zm171-192-51-51 357-357H576v-72h240v240h-72v-117L387-336Z',
+    pool: 'M96-144v-72q36 0 54-19t75-19q57 0 74 19t53 19q36 0 53.5-19t74.5-19q55 0 74 19t54 19q36 0 53.5-19t74.5-19q57 0 74.5 19t53.5 19v72q-55 0-74-19t-54-19q-35 0-53.5 19T608-144q-55 0-74-19t-54-19q-36 0-53.5 19T352-144q-57 0-74-19t-53-19q-36 0-54 19t-75 19Zm1-144v-72q36 0 53.5-19t74.5-19q57 0 74.5 19t53.5 19q36 0 53.5-19t74.5-19q55 0 74 19t54 19q36 0 53-19t74-19q57 0 74.5 19t53.5 19v72q-55 0-74-19t-54-19q-35 0-53 19t-74 19q-55 0-74-19t-54-19q-36 0-53.5 19T353-288q-57 0-74.5-19T225-326q-36 0-53.5 19T97-288Zm173-201 134-134-39-39q-32-32-66.5-45T211-720v-96q72 0 118.5 16t91.5 61l256 255q-19 9-32.5 18t-36.5 9q-35 0-54-19t-74-19q-57 0-74.5 19T352-457q-27 0-41.5-12T270-489Zm446-299q28 28 28 68t-28 68q-28 28-68 28t-68-28q-28-28-28-68t28-68q28-28 68-28t68 28Z',
+    roller_skating: 'M168-312v-600h360v197q0 23.58 15 42.79T581-646l105 29q47 14 76.5 50t29.5 87v168H168Zm72-72h480v-96q0-23.43-15-41.21Q690-539 667-547l-105-29q-29-8-53.5-27.5T473-648h-89.1q-9.9 0-16.9-7.2-7-7.2-7-16.8 0-9.6 7.2-16.8 7.2-7.2 16.8-7.2h72v-48h-72q-9.6 0-16.8-7.2-7.2-7.2-7.2-16.8 0-9.6 7.2-16.8 7.2-7.2 16.8-7.2h72v-48H240v456Zm0 0ZM204-48q-45 0-76.5-31.5T96-156q0-45 31.5-76.5T204-264q45 0 76.5 31.5T312-156q0 45-31.5 76.5T204-48Zm-.21-72q15.21 0 25.71-10.29t10.5-25.5q0-15.21-10.29-25.71t-25.5-10.5q-15.21 0-25.71 10.29t-10.5 25.5q0 15.21 10.29 25.71t25.5 10.5ZM756-48q-45 0-76.5-31.5T648-156q0-45 31.5-76.5T756-264q45 0 76.5 31.5T864-156q0 45-31.5 76.5T756-48Zm-.21-72q15.21 0 25.71-10.29t10.5-25.5q0-15.21-10.29-25.71t-25.5-10.5q-15.21 0-25.71 10.29t-10.5 25.5q0 15.21 10.29 25.71t25.5 10.5ZM480-48q-45 0-76.5-31.5T372-156q0-45 31.5-76.5T480-264q45 0 76.5 31.5T588-156q0 45-31.5 76.5T480-48Zm-.21-72q15.21 0 25.71-10.29t10.5-25.5q0-15.21-10.29-25.71t-25.5-10.5q-15.21 0-25.71 10.29t-10.5 25.5q0 15.21 10.29 25.71t25.5 10.5ZM204-156Zm276 0Zm276 0Z',
+    route: 'M270-186.17q-42-42.18-42-101.4V-581q-37-12-60.5-44T144-696q0-50 35.5-85t85-35q49.5 0 84.5 35t35 85q0 41-24 72t-60 42v294.06q0 29.67 21.21 50.81 21.21 21.13 51 21.13T423-237.15q21-21.15 21-50.85v-384q0-60 42-102t102-42q60 0 102 42t42 102v294q36 11 60 42t24 72q0 50-35 85t-85 35q-49 0-84.5-35T576-264q0-38 24-71t60-43.77v-293.6Q660-702 638.79-723q-21.21-21-51-21T537-722.85Q516-701.7 516-672v384q0 60-42 102t-102 42q-60 0-102-42.17ZM264-648q20.4 0 34.2-13.8Q312-675.6 312-696q0-20.4-13.8-34.2Q284.4-744 264-744q-20.4 0-34.2 13.8Q216-716.4 216-696q0 20.4 13.8 34.2Q243.6-648 264-648Zm432 432q20.4 0 34.2-13.8Q744-243.6 744-264q0-20.4-13.8-34.2Q716.4-312 696-312q-20.4 0-34.2 13.8Q648-284.4 648-264q0 20.4 13.8 34.2Q675.6-216 696-216ZM264-696Zm432 432Z',
+    schedule: 'm614-310 51-51-149-149v-210h-72v240l170 170ZM480-96q-79.38 0-149.19-30T208.5-208.5Q156-261 126-330.96t-30-149.5Q96-560 126-630q30-70 82.5-122t122.46-82q69.96-30 149.5-30t149.55 30.24q70 30.24 121.79 82.08 51.78 51.84 81.99 121.92Q864-559.68 864-480q0 79.38-30 149.19T752-208.5Q700-156 629.87-126T480-96Zm0-384Zm.48 312q129.47 0 220.5-91.5Q792-351 792-480.48q0-129.47-91.02-220.5Q609.95-792 480.48-792 351-792 259.5-700.98 168-609.95 168-480.48 168-351 259.5-259.5T480.48-168Z',
+    self_improvement: 'M298-180q-24.17 0-41.08-16.94Q240-213.87 240-238.06q0-16.94 9.5-30.94t25.5-22l133-57v-108q-44 39-98.42 61.5Q255.17-372 192-372v-72q60 0 110-25.5t85-69.5q10-12 24.4-18.5 14.4-6.5 30.6-6.5h76q16.2 0 30.6 6.5Q563-551 573-539q35 44 85 69.5T768-444v72q-63.17 0-117.58-22.5Q596-417 552-456v108l133 57q16 7 25.5 21.72 9.5 14.71 9.5 31.42Q720-214 703.08-197q-16.91 17-41.08 17H396v-12q0-25 17.5-42.5T456-252h108q5.4 0 8.7-3.5 3.3-3.5 3.3-8.5t-3.3-8.5q-3.3-3.5-8.7-3.5H456q-35.28 0-59.64 24.36T372-192v12h-74Zm122.5-444.75Q396-649.5 396-684.25t24.75-59.25q24.75-24.5 59.5-24.5t59.25 24.75q24.5 24.75 24.5 59.5t-24.75 59.25Q514.5-600 479.75-600t-59.25-24.75Z',
+    snowboarding: 'M755-72q-8 0-17-1t-18-3L210-184q-45-9-71.5-33T99-264q-1-2-3-13 0-11 7.5-17.5T120-301q7 0 12 3.5t9 9.5q12 21 32.5 36t46.5 21l32 7 132-88-36-123q-6-20-3-40.5t14-37.5l84-135h-93l-73 115-61-43 96-144h216q25 0 40 12t22 24l36 61q26 43 69 69t97 26v72q-71 0-129.5-33.5T569-578l-70 112 125 96 48 235 58 13q6 2 12 2h12q20 0 38-6t33-17q1-1 15-5 11 0 17.5 7t6.5 17q0 7-2.5 11.5T854-104q-14 11-39.5 21.5T755-72Zm-160-79-36-178-113-79 22 127-118 77 245 53Zm17-593q-35 0-59.5-24.5T528-828q0-35 24.5-59.5T612-912q35 0 59.5 24.5T696-828q0 35-24.5 59.5T612-744Z',
+    snowshoeing: 'M385-96q-8 0-34-11.5T303-147l-87-112 38-29 43 55 88-65 54-274-79 34v106h-72v-154l185-78q9-4 18.5-6t19.5-2q32 0 53.5 16.5T601-613l12 19q19 33 49.5 61.5T768-504v72q-59 0-108.5-26T577-528l-23 120 70 70v194q17 0 31.5-5t26.5-14q3-2 6.5-3.5t7.5-1.5q11 0 17.5 7.5T720-144q0 5-2.5 10t-7.5 9q-18 14-40 21.5T624-96H480v-48h72v-165l-76-76-25 129-110 79q10 13 23.5 21.5T392-143q8 2 12.5 8t4.5 14q0 10-6.5 17.5T385-96Zm191-600q-35 0-59.5-24.5T492-780q0-35 24.5-59.5T576-864q35 0 59.5 24.5T660-780q0 35-24.5 59.5T576-696Z',
+    sports: 'M432-240q-100 0-170-70t-70-170q0-11 1.5-24t3.5-24h-5q-42 0-69-27.5t-27-68.02q0-40.52 28-68.5Q152-720 192-720q29 0 53.5 14.5T279-664q32-29 71.5-42.5T432-720h432v144H672v96q0 100-70 170t-170 70ZM209-606.86q7-6.86 7-17T209.14-641q-6.86-7-17-7T175-641.14q-7 6.86-7 17t6.86 17.14q6.86 7 17 7t17.14-6.86Zm316.5 220.14q38.5-38.72 38.5-93.5t-38.72-93.28q-38.72-38.5-93.5-38.5t-93.28 38.72q-38.5 38.72-38.5 93.5t38.72 93.28q38.72 38.5 93.5 38.5t93.28-38.72ZM483-429.21q21-21.21 21-51T482.79-531q-21.21-21-51-21T381-530.79q-21 21.21-21 51T381.21-429q21.21 21 51 21T483-429.21ZM432-480Z',
+    sports_tennis: 'm147-144-51-51 120-120q45-45 58.5-86.5T288-540q0-61 25.5-119T387-765q88-88 195-100t176 59q69 71 57 177.5T717-435q-48 48-106 73.5T492-336q-97 0-138.5 13.5T267-264L147-144Zm249-300q46 46 126.5 33.5T666-486q63-64 75.5-144T708-755q-46-45-126.5-33.5T438-714q-63 63-75.5 143.5T396-444ZM570-66q-42-42-42-102t42-102q42-42 102-42t102 42q42 42 42 102T774-66q-42 42-102 42T570-66Zm153-51q21-21 21-51t-21-51q-21-21-51-21t-51 21q-21 21-21 51t21 51q21 21 51 21t51-21Zm-51-51Z',
+    trending_down: 'M624-209v-72h117L529-492 377-340 96-621l51-51 230 230 152-152 263 262v-117h72v240H624Z',
+    trending_up: 'm147-209-51-51 281-281 152 152 212-211H624v-72h240v240h-72v-117L529-287 377-439 147-209Z',
+};
 
-    const activityLink = garminConnectUrl
-        ? `<a href="${garminConnectUrl}${activity.activity_id}" target="_blank" style="color: #007cba; text-decoration: none;">${activity.activity_id}</a>`
-        : activity.activity_id;
+// Garmin type_key -> popup icon. Other keys get POPUP_FALLBACK_TYPE_ICON. Material
+// Symbols has no cross-country skiing icon; nordic_walking (a figure with poles) is closest.
+const ACTIVITY_TYPE_ICONS = {
+    running: 'directions_run', trail_running: 'directions_run', track_running: 'directions_run',
+    treadmill_running: 'directions_run',
+    inline_skating: 'roller_skating',
+    resort_skiing: 'downhill_skiing', resort_skiing_snowboarding_ws: 'downhill_skiing',
+    resort_snowboarding: 'snowboarding',
+    skate_skiing_ws: 'nordic_walking', cross_country_skiing_ws: 'nordic_walking',
+    backcountry_skiing: 'snowshoeing',
+    hiking: 'hiking', walking: 'directions_walk',
+    cycling: 'directions_bike', mountain_biking: 'directions_bike', gravel_cycling: 'directions_bike',
+    open_water_swimming: 'pool', lap_swimming: 'pool',
+    paddling_v2: 'kayaking',
+    tennis_v2: 'sports_tennis',
+    strength_training: 'fitness_center',
+    indoor_cardio: 'ecg_heart',
+    breathwork: 'self_improvement',
+};
+const POPUP_FALLBACK_TYPE_ICON = 'sports';
+
+// An icon as inline SVG. With a label it is announced and shows the label as a
+// tooltip; without one it is decorative.
+function popupIcon(name, label, extraClass) {
+    const cls = extraClass ? `ap-i ${extraClass}` : 'ap-i';
+    const a11y = label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"';
+    const title = label ? `<title>${label}</title>` : '';
+    return `<svg class="${cls}" viewBox="0 -960 960 960" ${a11y}>${title}<path d="${POPUP_ICON_PATHS[name]}"/></svg>`;
+}
+
+// 'resort_skiing_snowboarding_ws' -> 'Resort skiing snowboarding'
+function activityTypeLabel(typeKey) {
+    const words = String(typeKey || 'other').replace(/_(ws|v\d+)$/, '').replace(/_/g, ' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// Date (and time, when the activity carries one) in the browser's locale, e.g.
+// 'Sat, 14 Jun 2025, 7:32' in en-GB. Unparseable dates show as stored.
+function formatActivityStart(date, time) {
+    const hasTime = /^\d{1,2}:\d{2}$/.test(time || '');
+    const start = new Date(`${date}T${hasTime ? time.padStart(5, '0') : '00:00'}:00`);
+    if (isNaN(start)) return date;
+    const options = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
+    if (hasTime) Object.assign(options, { hour: 'numeric', minute: '2-digit' });
+    return new Intl.DateTimeFormat(undefined, options).format(start);
+}
+
+function formatUnit(value, unit, maximumFractionDigits) {
+    return new Intl.NumberFormat(undefined, { style: 'unit', unit, maximumFractionDigits }).format(value);
+}
+
+function injectActivityPopupStyles() {
+    const style = document.createElement('style');
+    style.id = 'activity-popup-style';
+    style.textContent = `
+        /* Leaflet's default is 13px 24px 13px 20px; the right side keeps room for the close button. */
+        .activity-popup .leaflet-popup-content { margin: 9px 22px 9px 12px; }
+        .activity-popup .leaflet-popup-content-wrapper { border-radius: 8px; }
+        .ap { font-family: Arial, sans-serif; color: #333; max-width: 250px; }
+        .ap-title { font-weight: bold; font-size: 13px; line-height: 1.3; color: #222; }
+        .ap-i { width: 16px; height: 16px; flex: 0 0 auto; fill: currentColor; }
+        .ap-meta { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 12px; color: #6b6b6b; }
+        .ap-meta .ap-type { width: 18px; height: 18px; color: #555; }
+        .ap-meta a { display: inline-flex; color: #007cba; padding: 2px; margin: -2px; border-radius: 3px; }
+        .ap-meta a:hover { color: #005a87; background: #eef6fb; }
+        .ap-metrics {
+            display: grid;
+            grid-template-columns: auto auto;
+            gap: 3px 12px;
+            justify-content: start;
+            margin-top: 6px;
+            padding-top: 5px;
+            border-top: 1px solid #eee;
+            font-variant-numeric: tabular-nums;
+        }
+        .ap-m { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 13px; font-weight: bold; color: #222; }
+        .ap-m .ap-i { width: 16px; height: 16px; color: #8a8a8a; }
+    `;
+    document.head.appendChild(style);
+}
+injectActivityPopupStyles();
+
+/**
+ * Popup of one activity: title; type icon, local date/time and a Garmin Connect
+ * link; then distance and duration, with total ascent / descent in a second row
+ * for activities that carry elevation_gain / elevation_loss (the rest leave them out).
+ */
+function createActivityPopupHtml(activity, garminConnectUrl) {
+    const typeLabel = activityTypeLabel(activity.activity_type);
+    const typeIcon = popupIcon(
+        ACTIVITY_TYPE_ICONS[activity.activity_type] || POPUP_FALLBACK_TYPE_ICON, typeLabel, 'ap-type');
+    const link = garminConnectUrl
+        ? `<a href="${garminConnectUrl}${activity.activity_id}" target="_blank" rel="noopener" title="Open in Garmin Connect" aria-label="Open in Garmin Connect">${popupIcon('open_in_new')}</a>`
+        : '';
+    const metric = (icon, label, value) =>
+        `<span class="ap-m" title="${label}">${popupIcon(icon, label)}${value}</span>`;
 
     return `
-    <div style="font-family: Arial, sans-serif; font-size: 12px; line-height: 1.4; max-width: 250px;">
-        <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; color: #333;">
-            ${activity.name}
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Date:</span> ${activity.date}
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Type:</span> ${activity.activity_type}
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Distance:</span> ${activity.distance} km
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Duration:</span> ${durationFormatted}
-        </div>
-        <div style="margin-bottom: 4px;">
-            <span style="font-weight: bold;">Activity ID:</span> ${activityLink}
+    <div class="ap">
+        <div class="ap-title">${activity.name}</div>
+        <div class="ap-meta">${typeIcon}<span>${formatActivityStart(activity.date, activity.time)}</span>${link}</div>
+        <div class="ap-metrics">
+            ${metric('route', 'Distance', formatUnit(Number(activity.distance) || 0, 'kilometer', 1))}
+            ${metric('schedule', 'Duration', formatDuration(activity.duration))}
+            ${activity.elevation_gain != null ? metric('trending_up', 'Total ascent', formatUnit(activity.elevation_gain, 'meter', 0)) : ''}
+            ${activity.elevation_loss != null ? metric('trending_down', 'Total descent', formatUnit(activity.elevation_loss, 'meter', 0)) : ''}
         </div>
     </div>
     `;
@@ -513,7 +619,7 @@ function createPolylineForActivity(activity) {
         ? manifest.config.garmin_connect_url
         : null;
 
-    polyline.bindPopup(createActivityPopupHtml(activity, garminConnectUrl));
+    polyline.bindPopup(createActivityPopupHtml(activity, garminConnectUrl), { className: 'activity-popup' });
     // Clicks are resolved by the map-level tap picker (onMapTap) instead, which
     // tolerates near misses and lists overlapping tracks. The click still bubbles
     // up to the map, so only the popup's own click-to-open handler is dropped.
@@ -1204,7 +1310,7 @@ function formatDuration(totalMinutes) {
     const minutes = Math.floor(totalMinutes);
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
-    return hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
+    return hours > 0 ? `${hours} h ${mins} min` : `${mins} min`;
 }
 
 function garminActivityLink(activityId) {

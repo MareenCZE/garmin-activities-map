@@ -227,5 +227,5 @@ remove them**:
   retired, so the login needs to move to whatever replaces it
 * docs: revisit the documentation — change the tone of `docs/architecture.md` and
   improve this README.
-* popup: revisit the activity popup dialog — consider showing just the values without
-  labels, perhaps with icons instead.
+* popup: the activity popup can already show the start time and total ascent/descent, but
+  the map data doesn't carry them yet (`time`, `elevation_gain`, `elevation_loss`).
