@@ -382,3 +382,78 @@ def test_single_match_tap_keeps_rectangle_list(served_map, browser):
     page.mouse.click(pt["x"], pt["y"])
     assert "Solo" in _popup_text(page)
     assert "Selection" in dialog.inner_text()
+
+
+def _popup_box(page):
+    return page.locator(".activity-popup .leaflet-popup-content-wrapper").bounding_box()
+
+
+def _drag(page, touch, x, y, dx, dy):
+    """Drag from (x, y) by (dx, dy) with the mouse, or with one finger over CDP."""
+    steps = 8
+    if not touch:
+        page.mouse.move(x, y)
+        page.mouse.down()
+        page.mouse.move(x + dx, y + dy, steps=steps)
+        page.mouse.up()
+        return
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+    for i in range(1, steps + 1):
+        cdp.send("Input.dispatchTouchEvent", {
+            "type": "touchMove",
+            "touchPoints": [{"x": x + dx * i / steps, "y": y + dy * i / steps}]})
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+
+
+@pytest.mark.parametrize("touch", [False, True])
+def test_popup_can_be_dragged_aside(served_map, browser, touch):
+    page = _open(browser, served_map, touch=touch)
+    pt = _page_point(page, SOLO_LAT, 0.005)
+    (page.touchscreen.tap if touch else page.mouse.click)(pt["x"], pt["y"])
+    assert "Solo" in _popup_text(page)
+    tip = page.locator(".activity-popup .leaflet-popup-tip-container")
+    assert tip.is_visible()
+    before = _popup_box(page)
+    view = _view(page)
+
+    # Dragging anywhere but the title leaves the popup where it is...
+    meta = page.locator(".activity-popup .ap-meta span").bounding_box()
+    _drag(page, touch, meta["x"] + 5, meta["y"] + meta["height"] / 2, 80, -40)
+    page.wait_for_timeout(300)
+    # (released over the map, which must not take it as a click that closes the popup)
+    assert page.locator(".leaflet-popup-content").count() == 1
+    assert _popup_box(page) == pytest.approx(before, abs=1)
+    assert tip.is_visible()
+
+    # ...the title moves it.
+    grab = page.locator(".activity-popup .ap-title").bounding_box()
+    _drag(page, touch, grab["x"] + 5, grab["y"] + grab["height"] / 2, 80, -40)
+
+    after = _popup_box(page)
+    assert (after["x"] - before["x"], after["y"] - before["y"]) == pytest.approx((80, -40), abs=1)
+    assert _view(page) == pytest.approx(view, abs=1e-9)  # the map itself didn't pan
+    assert not tip.is_visible()                           # the tip no longer points at the track
+    assert page.locator(".leaflet-popup-content").count() == 1
+
+    # Zooming keeps the popup the same distance from its point on the track.
+    anchor = _page_point(page, SOLO_LAT, 0.005)
+    page.evaluate("() => mapInstance.setZoom(mapInstance.getZoom() + 1, {animate: false})")
+    moved_anchor = _page_point(page, SOLO_LAT, 0.005)
+    zoomed = _popup_box(page)
+    assert (zoomed["x"] - moved_anchor["x"], zoomed["y"] - moved_anchor["y"]) == pytest.approx(
+        (after["x"] - anchor["x"], after["y"] - anchor["y"]), abs=1)
+
+    # The title still drags after the popup re-rendered its content.
+    grab = page.locator(".activity-popup .ap-title").bounding_box()
+    _drag(page, touch, grab["x"] + 5, grab["y"] + grab["height"] / 2, -30, 20)
+    again = _popup_box(page)
+    assert (again["x"] - zoomed["x"], again["y"] - zoomed["y"]) == pytest.approx((-30, 20), abs=1)
+
+    # Reopened, the popup is back in its usual place with its tip.
+    page.evaluate("() => mapInstance.closePopup()")
+    page.evaluate("() => mapInstance.setZoom(mapInstance.getZoom() - 1, {animate: false})")
+    (page.touchscreen.tap if touch else page.mouse.click)(pt["x"], pt["y"])
+    assert "Solo" in _popup_text(page)
+    assert _popup_box(page) == pytest.approx(before, abs=1)
+    assert tip.is_visible()

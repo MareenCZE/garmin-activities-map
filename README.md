@@ -22,7 +22,7 @@ Example with a dark background map:
 ![Black map](images/black.png)
 
 Hovering over an activity highlights it. Clicking an activity opens a popup with basic information about the activity and a link to Garmin
-Connect. The click doesn't have to hit the thin line exactly: anything within a few pixels counts
+Connect. The popup can be dragged aside by its title when it covers something. The click doesn't have to hit the thin line exactly: anything within a few pixels counts
 (about 20 px for a finger on a touch screen, 6 px for a mouse). Where several tracks pass through the
 clicked spot, a list of them is shown instead, to pick from. With a mouse, picking one closes the
 list; on a touch screen it stays open until the next tap on the map:

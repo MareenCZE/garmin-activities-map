@@ -108,7 +108,11 @@ Pure client JS drives the interactivity:
   Connect link icon; distance and duration, plus total ascent/descent when the activity data
   carries `elevation_gain`/`elevation_loss`, which the generated data doesn't yet), and does
   hover/popup highlighting (bright green). The popup icons are Material Symbols (Apache 2.0)
-  inlined as SVG paths; `ACTIVITY_TYPE_ICONS` maps Garmin `type_key`s to them.
+  inlined as SVG paths; `ACTIVITY_TYPE_ICONS` maps Garmin `type_key`s to them. An open
+  popup can be dragged aside by its title (`enablePopupDragging`, Leaflet's `L.Draggable`):
+  the drag goes into the popup's pixel `offset`, so it keeps its place relative to the track
+  through pans and zooms, and its tip is hidden until it is closed. A mouse press that starts
+  in the popup and ends over the map is not taken as a map click (`installPopupPressGuard`).
 - A **date-range panel** (`initializeDateRangeSlider`) filters visible tracks by date: a
   noUiSlider, a preset `<select>` (relative ranges plus one entry per year in the data) and two
   native `<input type="date">` fields, kept in sync. It counts whole days as UTC day numbers
