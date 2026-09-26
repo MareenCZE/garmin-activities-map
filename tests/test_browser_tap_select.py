@@ -173,12 +173,35 @@ def test_tap_on_overlapping_tracks_lists_them(served_map, browser):
         timeout=5000,
     )
 
-    # A row tap opens that activity's popup; closing the dialog clears the tap.
-    dialog.locator(".area-sel-row").first.click()
+    # A row tap opens that activity's popup and keeps the list; closing the dialog
+    # clears the tap.
+    box = dialog.locator(".area-sel-row").first.bounding_box()
+    page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     assert "Twin A" in _popup_text(page)
-    page.click("#area-sel-close")
+    assert page.locator("#area-selection-dialog").count() == 1
+    close = page.locator("#area-sel-close").bounding_box()
+    page.touchscreen.tap(close["x"] + close["width"] / 2, close["y"] + close["height"] / 2)
     assert page.locator("#area-selection-dialog").count() == 0
     assert page.evaluate("() => tapSelectLatLng") is None
+
+
+def test_mouse_click_on_list_row_closes_tap_list(served_map, browser):
+    page = _open(browser, served_map, touch=False)
+    pt = _page_point(page, TWIN_LAT, 0.005)
+    page.mouse.click(pt["x"], pt["y"])
+    dialog = page.locator("#area-selection-dialog")
+    dialog.wait_for(timeout=5000)
+
+    dialog.locator(".area-sel-row").nth(1).click()  # Twin A (newest first)
+    assert "Twin A" in _popup_text(page)
+    assert page.locator("#area-selection-dialog").count() == 0
+    assert page.evaluate("() => tapSelectLatLng") is None
+    # The picked track stays highlighted and on top while its popup is open...
+    assert _track_weight(page, "Twin A") == 5
+    assert _topmost_track(page) == "Twin A"
+    # ...and drops the highlight when the popup closes.
+    page.evaluate("() => mapInstance.closePopup()")
+    assert _track_weight(page, "Twin A") == 2
 
 
 def _topmost_track(page):
@@ -197,13 +220,20 @@ def _topmost_track(page):
 
 
 def test_track_picked_from_list_stays_on_top(served_map, browser):
+    # A rectangle list, since that one stays open after a mouse click on a row.
     page = _open(browser, served_map, touch=False)
-    pt = _page_point(page, TWIN_LAT, 0.005)
-    page.mouse.click(pt["x"], pt["y"])
+    start = _page_point(page, TWIN_LAT + 0.002, -0.002)  # takes in both twins' start points
+    end = _page_point(page, TWIN_LAT - 0.002, 0.012)
+    page.click(".leaflet-control-area-select")
+    page.mouse.move(start["x"], start["y"])
+    page.mouse.down()
+    page.mouse.move(end["x"], end["y"], steps=8)
+    page.mouse.up()
     dialog = page.locator("#area-selection-dialog")
     dialog.wait_for(timeout=5000)
 
     rows = dialog.locator(".area-sel-row")
+    assert rows.count() == 2
     rows.nth(1).click()  # Twin A (newest first)
     assert "Twin A" in _popup_text(page)
     rows.nth(0).hover()  # hovering Twin B raises it over Twin A...
@@ -284,8 +314,9 @@ def test_closing_list_keeps_highlight_of_open_popup(served_map, browser, touch):
     assert "Twin B" in _popup_text(page)
     assert _track_weight(page, "Twin B") == 5
 
-    close = page.locator("#area-sel-close").bounding_box()
-    tap(close["x"] + close["width"] / 2, close["y"] + close["height"] / 2)
+    if touch:  # a mouse click on the row already closed the list
+        close = page.locator("#area-sel-close").bounding_box()
+        tap(close["x"] + close["width"] / 2, close["y"] + close["height"] / 2)
     assert page.locator("#area-selection-dialog").count() == 0
     assert page.locator(".leaflet-popup-content").count() == 1
     assert _track_weight(page, "Twin B") == 5

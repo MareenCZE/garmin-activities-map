@@ -139,7 +139,9 @@ Pure client JS drives the interactivity:
   opens its popup at the click point. Several (overlapping tracks) are listed in the same
   selection dialog the area tool uses, without the partial/full toggle, and the list refreshes
   live when the filters change. The next map click closes that list, whether or not it picks
-  anything; a rectangle's list stays until its own close button. Clicks while the area tool is
+  anything, and so does a mouse click on one of its rows (a finger's tap on a row keeps it, as
+  touch has no hover to tell the tracks apart); a rectangle's list stays until its own close
+  button. Clicks while the area tool is
   armed, and the click that ends a rectangle drag, are ignored.
 - A **Mapy.com attribution control** (`initializeMapyAttribution`) adds the clickable
   Mapy.com logo their terms require (30 px, their minimum on-map height), shown only

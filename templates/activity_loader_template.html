@@ -1682,6 +1682,14 @@ function showSelectionDialog() {
         row.addEventListener('click', function(e) {
             if (e.target.tagName === 'A') return; // let the Garmin link work normally
             item.polyline.openPopup(selectionPopupLatLng(item));
+            // With a mouse, picking a track from a tap list is done: the list closes
+            // (the rows' hover already let you compare the tracks). On touch it stays,
+            // as the rows are the only way to see which track is which. A rectangle
+            // list always stays: it is closed with its own button.
+            if (tapSelectLatLng && !isCoarsePointer(e)) {
+                item.polyline.once('popupclose', function() { this.setStyle(baseStyle); });
+                clearSelection();
+            }
         });
     });
 }
@@ -1744,14 +1752,18 @@ function initializeAreaSelection() {
 const TAP_TOLERANCE_TOUCH_PX = 20;   // a fingertip covers ~40 px
 const TAP_TOLERANCE_MOUSE_PX = 6;
 
-function tapTolerancePx(e) {
+/** Whether a DOM click came from a finger or pen rather than a mouse. */
+function isCoarsePointer(domEvent) {
     // Chromium/Firefox/Safari report the click's pointerType; fall back to the
     // device's primary pointer where they don't.
-    const pointerType = e && e.originalEvent && e.originalEvent.pointerType;
-    const coarse = pointerType
+    const pointerType = domEvent && domEvent.pointerType;
+    return pointerType
         ? pointerType !== 'mouse'
         : !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    return coarse ? TAP_TOLERANCE_TOUCH_PX : TAP_TOLERANCE_MOUSE_PX;
+}
+
+function tapTolerancePx(e) {
+    return isCoarsePointer(e && e.originalEvent) ? TAP_TOLERANCE_TOUCH_PX : TAP_TOLERANCE_MOUSE_PX;
 }
 
 /** Screen distance (px) from a layer point to an activity's track. */
