@@ -578,12 +578,34 @@ function findLayerByName(layerName) {
     return layer;
 }
 
+// category name -> promise of its activities, so a category is fetched only once
+// even when it is requested again (e.g. toggled on) while the first fetch runs
+let activityFetches = {};
+
+function fetchCategoryActivities(categoryName, categoryInfo) {
+    if (!activityFetches[categoryName]) {
+        console.log(`Loading data for category: ${categoryName}`);
+        activityFetches[categoryName] = fetch(categoryInfo.data_file)
+            .then(response => response.json())
+            .catch(error => {
+                delete activityFetches[categoryName];  // let a later toggle retry
+                throw error;
+            });
+    }
+    return activityFetches[categoryName];
+}
+
 async function loadManifest() {
     try {
         console.log('Loading manifest...');
         const response = await fetch('data/manifest.json');
         manifest = await response.json();
         console.log('Loaded manifest:', manifest);
+
+        // Download the categories shown on load while the map is still being set up
+        const initialCategories = Object.entries(manifest.categories)
+            .filter(([, info]) => info.show_on_load && info.activity_count > 0);
+        initialCategories.forEach(([name, info]) => fetchCategoryActivities(name, info).catch(() => {}));
 
         console.log('Waiting for map...');
         await waitForMap();
@@ -607,12 +629,8 @@ async function loadManifest() {
             return;
         }
 
-        for (const [categoryName, categoryInfo] of Object.entries(manifest.categories)) {
-            if (categoryInfo.show_on_load && categoryInfo.activity_count > 0) {
-                await loadCategoryData(categoryName, categoryInfo);
-            }
-        }
-
+        // The controls come first: the date range is then known, so each category
+        // is drawn once, already filtered, when its data arrives.
         setupMapEventListeners();
         initializeDateRangeSlider();
         initializeLayerSelects();
@@ -621,6 +639,11 @@ async function loadManifest() {
         initializeAreaSelection();
         initializeTapSelection();
         arrangeTopRightControls();
+
+        // Drawn in manifest order, which keeps the stacking of categories stable
+        for (const [categoryName, categoryInfo] of initialCategories) {
+            await loadCategoryData(categoryName, categoryInfo);
+        }
 
     } catch (error) {
         console.error('Error loading manifest:', error);
@@ -634,9 +657,8 @@ async function loadCategoryData(categoryName, categoryInfo) {
     }
 
     try {
-        console.log(`Loading data for category: ${categoryName}`);
-        const response = await fetch(categoryInfo.data_file);
-        const activities = await response.json();
+        const activities = await fetchCategoryActivities(categoryName, categoryInfo);
+        if (activityData[categoryName]) return;  // a concurrent call drew it meanwhile
 
         activityData[categoryName] = activities;
         console.log(`Loaded ${activities.length} activities for ${categoryName}`);
@@ -1896,7 +1918,7 @@ function initializeTapSelection() {
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, starting activity loader...');
-    setTimeout(loadManifest, 2000);
+    loadManifest();
 });
 </script>
 </body>
