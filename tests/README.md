@@ -20,27 +20,25 @@ suite never reads or writes your real `data/` or `output/` trees.
 
 ## Dependencies
 
-The tests need pytest plus the pipeline's runtime imports. Note that the full
-`requirements.txt` currently has an unrelated resolver conflict
-(`withings-sync` vs `garth`, from `consolidation.py`, which is outside the map
-pipeline), so install the test deps directly:
+Install the runtime and test dependencies into a virtual environment:
 
 ```bash
-pip install pytest folium gpxpy simplification cryptography garminconnect garth
-# optional, for coverage:
-pip install pytest-cov && python -m pytest --cov=. --cov-report=term-missing
+pip install -r requirements-dev.txt
 ```
 
-## Optional browser test
+For Python coverage: `coverage run -m pytest && coverage report -m`.
 
-`test_browser_mapy.py` drives the generated map in headless Chromium to verify
-the client-side JavaScript that toggles the Mapy.com attribution logo (the one
-thing pure-Python tests can't cover). It **skips automatically** unless Playwright
-and a Chromium build are present:
+## Browser tests
+
+The `test_browser_*.py` modules build a real map, serve it locally and drive it in
+headless Chromium to test the client-side JavaScript in
+`templates/activity_loader_template.html`, which pure-Python tests can't reach. They
+**skip silently** unless Playwright and a Chromium build are present, so a green run
+does not by itself mean they ran:
 
 ```bash
-pip install playwright && playwright install chromium
-python -m pytest tests/test_browser_mapy.py
+playwright install chromium
+python -m pytest tests/test_browser_*.py
 ```
 
 ## Layout
@@ -53,6 +51,7 @@ python -m pytest tests/test_browser_mapy.py
   manifest, and an end-to-end map build
 - `test_ftpuploader.py` — Fernet round-trip, size-based upload decisions, and the
   incremental upload flow (mocked `ftplib.FTP`)
+- `test_cli.py` — command-line options overriding the `[mode]` config
 - `test_browser_mapy.py` — headless-Chromium check of the Mapy.com logo toggle
   (opt-in; see above)
 - `test_browser_area_select.py`, `test_browser_tap_select.py` — headless-Chromium
@@ -61,6 +60,8 @@ python -m pytest tests/test_browser_mapy.py
 - `test_browser_controls.py` — headless-Chromium check of the control layout
   (date panel, tiles/types dropdowns, zoom bar, top-right hamburger) and of the
   tiles select and activity-types multiselect; opt-in like the one above
+- `test_browser_date_range.py` — headless-Chromium check of the date-range panel
+  (slider, presets, date fields, remembered preset); opt-in like the one above
 - `test_leak_guard.py` — the `.githooks` pre-commit guard: realistic synthetic
   Garmin artifacts are rejected and sanitized ones accepted, end-to-end commits in
   a throwaway repo, a whole-repo audit, and (local only, skipped on a fresh clone)

@@ -1,230 +1,321 @@
 # Garmin Activities Map
 
-Tool to render Garmin activities on a map. It downloads activities from Garmin Connect, stores them locally, generates an HTML file
-with all the activities shown on an interactive map and optionally uploads it to an FTP site. It gives you an easy-to-understand overview of
-where you were, which paths you visited and which are still waiting for you.
+Garmin Activities Map turns your Garmin Connect history into an interactive web map of
+every route you have run, ridden, hiked or skied. It downloads your activities, keeps a
+local copy of them, and generates a map you can open in a browser or publish on your own
+website. At a glance you see where you have been, which trails you have already covered
+and which are still waiting for you.
 
-It is a tool not an application. A couple of steps are needed to make it work and some code adjustments may be required to match
-your needs.
+![Activities on a light background map](images/map-light.png)
 
-It should be useful primarily for people using Garmin Connect as the main repository of their activities. If you use Strava, I would recommend
-to look into [StatsHunters](https://www.statshunters.com), which is a more mature and feature-rich application.
+<sub>All screenshots show synthetic demo activities.</sub>
 
+## Features
 
-## What it produces
+- **Incremental sync with Garmin Connect.** Each run downloads only new activities and
+  keeps a complete local archive: the original GPX track and the full activity data.
+- **A fast, lightweight map.** Tracks are simplified and split into one data file per
+  activity category, and each category loads only when it is shown, so even thousands
+  of activities stay responsive.
+- **Several background maps.** OpenStreetMap, CARTO (Light, Dark, Voyager) and
+  Mapy.com (Outdoor, Winter), or any other tile source supported by Folium.
+- **Filters.** Show only the activities in a date range or only the activity types you
+  are interested in.
+- **Activity details.** A popup shows each activity's date, distance, duration, ascent
+  and descent, with a link to Garmin Connect.
+- **Selection tools.** Click where tracks overlap to list them, or draw a rectangle to
+  list and total everything inside it.
+- **Works on desktop and mobile.** Mouse and touch input are both supported.
+- **Publishing.** The map is a set of static files that can be uploaded to any web host
+  over FTPS, incrementally.
+- **Scheduling.** Every step can be turned on or off from the command line, so the tool
+  can run unattended, e.g. from cron.
 
-Example with a light background map:
+### Background maps
 
-![White map](images/white.png)
+Pick the background that suits the map best: a clean light or dark basemap for an
+overview, or a detailed outdoor map when exploring trails.
 
-Example with a dark background map:
+<p>
+  <img src="images/map-dark.png" alt="Activities on a dark background map" width="49%">
+  <img src="images/activity-details.png" alt="Activity popup on the Mapy.com outdoor map" width="49%">
+</p>
 
-![Black map](images/black.png)
+### Activity details
 
-Hovering over an activity highlights it. Clicking an activity opens a popup with its start time, distance, duration, total ascent/descent
-(when Garmin recorded it) and a link to Garmin Connect. The popup can be dragged aside by its title when it covers something. The click doesn't have to hit the thin line exactly: anything within a few pixels counts
-(about 20 px for a finger on a touch screen, 6 px for a mouse). Where several tracks pass through the
-clicked spot, a list of them is shown instead, to pick from. With a mouse, picking one closes the
-list; on a touch screen it stays open until the next tap on the map:
+Hovering over a track highlights it. Clicking it opens a popup with the activity name
+and type, start date and time, distance, duration, total ascent and descent (when Garmin
+recorded them) and a link to the activity in Garmin Connect. The popup can be dragged
+aside by its title when it covers part of the map.
 
-![Activity popup](images/activity-popup.png)
+A click does not need to hit the thin line exactly: anything within a few pixels counts
+(about 6 px with a mouse, 20 px with a finger). Where several tracks pass through the
+clicked spot, they are listed so you can pick one. Hovering over a row highlights its
+track.
 
-Map controls allow for selection of background map, selection of activity categories to show and for zooming in/out:
+![List of overlapping activities](images/tap-list.png)
 
-![Map controls](images/controls.png)
+### Filtering by date and activity type
 
-The panel across the top filters activities by date. Drag the slider, pick a preset (all time, last
-30 days, last 12 months, this or last month, this or last year, or any single year with activities),
-or type/pick exact dates in the two date fields. The browser remembers the preset you last picked, so
-a relative one like "This year" keeps moving with the calendar; a hand-set range is not remembered.
+The panel along the top filters activities by date. Drag the slider, choose a preset
+(all time, last 30 days, last 12 months, this or last month, this or last year, or any
+single year), or enter exact dates. The browser remembers the last preset you picked, so
+a relative one such as "This year" moves with the calendar.
 
-The rectangle button (top right, under the menu button) enables the area-selection tool: drag a box on
-the map (with the mouse, or one finger on a touch screen) to list the activities inside it, with
-per-category and overall totals (distance, time, count) and a toggle between counting tracks that
-are *fully* inside vs *partially* inside the box. It only considers activities that are currently
-visible, so it respects the date-range slider and the category selection — and while the box stays
-up, the list updates live as you move the slider or toggle categories. Disable it with
-`enable-area-selection = false` under `[activities]` in your config.
+The drop-down under it selects the activity types to show, with the number of activities
+of each type.
 
+![Date range and activity type filters](images/filters.png)
 
-## How to get it working
+### Area selection
 
-* install Python 3
-* get python dependencies from requirements.txt
-* only if you want to upload resulting map to an FTP site
-  * copy the [ftp] section from config-default.toml to config-local.toml and populate it with your personal values
-  * set `protocol` to FTPS (the default) or FTP if your host does not support FTPS; plain FTP sends the password unencrypted
-  * first put your password in plain-text there
-  * run the tool while setting all the processors to OFF and setting utility-mode to ENCRYPT_FTP_PASSWORD
-    * `python activities-map.py --downloader OFF --map-creator OFF --uploader OFF --utility-mode ENCRYPT_FTP_PASSWORD`
-  * replace password in the config with the printed encrypted version
-  * the first run generates a random key in `.auth/ftp.key` (git-ignored). Back it up together with
-    config-local.toml; without it the password has to be encrypted again
-* only if you want to use Mapy.com (formerly Mapy.cz) map tiles (useful mostly for tourist paths in Central Europe region):
-  * go to https://developer.mapy.com/en/rest-api-mapy-cz/api-key/
-  * generate your own API key
-  * store the key in config-local.toml in [map-tiles] section as mapy-com-api-key
-* only if you want to use CARTO map tiles (the "Dark", "Light" and "Voyager" backgrounds):
-  * CARTO tiles require an API key since 2026 - without one they are served with an "API KEY REQUIRED" watermark
-  * get a free key (5 million tile requests / month) at https://carto.com/basemaps/apikey/
-  * store the key in config-local.toml in [map-tiles] section as carto-api-key
-* on the first run you will be asked for your Garmin credentials. It will then generate an authentication token which will be persisted 
-locally in .auth directory and will work for a year
+The rectangle button in the top-right corner turns on area selection. Drag a box on the
+map (with the mouse, or one finger on a touch screen) to list the activities inside it,
+with totals of distance, time and count per category and overall. You can count tracks
+that are fully inside the box or just pass through it. Only the activities currently
+shown are counted, and the list updates live as you change the filters. Area selection
+can be turned off with `enable-area-selection = false` under `[activities]`.
 
+![Area selection with totals](images/area-selection.png)
 
-## How to use it
+## Getting started
 
-* Adjust mode values in config-local.toml to reflect what you want to do
-* Run activities-map.py
-* Open the output `output/activities_map.html` or from your FTP site in your browser
-* Next time only new activities will be downloaded and whole map will be regenerated
+### Requirements
 
+- Python 3.11 or newer
+- A Garmin Connect account
+- Optional: API keys for CARTO and Mapy.com background maps
+- Optional: a web host with FTPS (or FTP) access, to publish the map
 
-* If you need to customize behavior of the tool start by understanding config-default.toml and take it from there
-* For automated or scheduled runs (e.g. cron) you can override the [mode] settings on the command
-  line instead of editing config - anything not passed keeps its config value:
-  * `python activities-map.py --downloader ON --map-creator ON --uploader ON`
-  * `python activities-map.py --utility-mode RESORT_CSV`
-  * run `python activities-map.py --help` to see all options
+### Installation
 
+```
+git clone https://github.com/MareenCZE/garmin-activities-map.git
+cd garmin-activities-map
+python -m venv venv
+source venv/bin/activate        # on Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Configuration
+
+All settings live in two TOML files:
+
+- `config-default.toml` documents every setting with its default value. Do not edit it.
+- `config-local.toml` (create it; it is git-ignored) holds your personal values and
+  overrides. It only needs the keys you want to change.
+
+The sections below cover the settings most people change.
+
+#### Garmin Connect
+
+No configuration is needed. On the first run you are asked for your Garmin Connect
+e-mail, password and, if enabled, an MFA code. The resulting login token is stored in
+`.auth/` and is valid for about a year.
+
+#### Background maps
+
+OpenStreetMap works without any setup. CARTO and Mapy.com need a free API key each; add
+them to the `[map-tiles]` section of `config-local.toml`:
+
+```toml
+[map-tiles]
+carto-api-key = "your CARTO key"
+mapy-com-api-key = "your Mapy.com key"
+```
+
+- **CARTO** (Light, Dark and Voyager): get a key at
+  <https://carto.com/basemaps/apikey/> (5 million tile requests a month are free).
+  Without a key the tiles carry an "API KEY REQUIRED" watermark.
+- **Mapy.com** (formerly Mapy.cz; detailed outdoor and winter maps, strongest in
+  Central Europe): get a key at <https://developer.mapy.com/en/rest-api-mapy-cz/api-key/>.
+  Without a key, the Mapy.com backgrounds are left out.
+
+The `tiles` list in the same section controls which backgrounds are offered and in what
+order.
+
+#### Activity categories
+
+`[activities].mapping` groups Garmin activity types into categories, each with its own
+colour, and `display-mapping-on-load` sets the categories shown when the page opens.
+Activity types that match no category go into "Other". A type's key (e.g.
+`trail_running`) can be found in the activity's JSON file under `data/json/`.
+
+#### Publishing via FTP
+
+1. Copy the `[ftp]` section from `config-default.toml` to `config-local.toml` and fill
+   in your host, user, remote path and file name. Put the password in as plain text for
+   now.
+2. Keep `protocol = "FTPS"` unless your host does not support it. Plain FTP sends the
+   password unencrypted.
+3. Encrypt the password:
+
+   ```
+   python activities-map.py --downloader OFF --map-creator OFF --uploader OFF --utility-mode ENCRYPT_FTP_PASSWORD
+   ```
+
+4. Replace the plain-text password in `config-local.toml` with the printed encrypted
+   value.
+
+The first encryption generates a random key in `.auth/ftp.key`. Back it up together
+with `config-local.toml`; without it the password has to be encrypted again.
+
+## Usage
+
+```
+python activities-map.py
+```
+
+With the default configuration, a run downloads new activities, generates the map and
+uploads it. Open `output/activities_map.html` in a browser, or the published page on
+your site. Later runs download only activities added since the previous run.
+
+### Command-line options
+
+Command-line options override the `[mode]` section of the config for a single run.
+This is convenient for scheduled runs:
+
+```
+python activities-map.py --downloader ON --map-creator ON --uploader ON
+python activities-map.py --uploader OFF
+python activities-map.py --help
+```
+
+### Maintenance operations
+
+The `--utility-mode` option (or `utility-mode` in `[mode]`) runs a one-off operation:
+
+| Mode                     | Purpose                                                              |
+|--------------------------|----------------------------------------------------------------------|
+| `REDOWNLOAD`             | Download one activity again; pass its ID with `--activity-id`.       |
+| `REGENERATE_COORDINATES` | Rebuild the map coordinates from the stored GPX files, e.g. after changing the precision settings. |
+| `REGENERATE_CSV`         | Rebuild the activity index from the stored JSON files.               |
+| `RESORT_CSV`             | Sort the activity index by date.                                     |
+| `ENCRYPT_FTP_PASSWORD`   | Encrypt the FTP password (see above).                                |
 
 ## How it works
 
-The tool is broken down into a couple of files which represent sort of isolated functionality.
+The application is a pipeline of small modules:
 
-* activities-map.py - the main file, the central piece which controls the flow and invokes other files
-* downloader.py - downloads data from Garmin Connect, reprocesses GPS coordinates of activities
-* storage.py - manages local storage of activities data
-* mapgenerator.py - creates a map and puts activities on it
-* ftpuploader.py - uploads the map to an FTP site
+- `activities-map.py` is the entry point. It reads the configuration and runs the
+  enabled stages.
+- `downloader.py` fetches activities from Garmin Connect and prepares the track data.
+- `storage.py` manages the local archive in `data/`, with `data/activities_list.csv`
+  as its index.
+- `mapgenerator.py` generates `output/activities_map.html` and its data files in
+  `output/data/`.
+- `ftpuploader.py` publishes the output to your web host.
 
-There are two configuration files:
-* config-default.toml - do not edit, contains default values and explanations of all the properties
-* config-local.toml - put your personal config overrides here. This file is not under version control
+The interactive behaviour of the map is implemented in
+`templates/activity_loader_template.html`. For the data formats, the generated files
+and the client-side design, see [docs/architecture.md](docs/architecture.md).
 
-See comments in individual files for more details. A deeper walkthrough of the
-pipeline, data model and output formats is in [docs/architecture.md](docs/architecture.md).
-
-Communication with Garmin Connect is based on [Python: Garmin Connect](https://github.com/cyberjunky/python-garminconnect) library.
-Map generation is done via the [Folium](https://python-visualization.github.io/folium/latest/index.html) library, which creates code based
-on the [Leaflet JS](https://leafletjs.com) library.
+The project builds on [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)
+for Garmin Connect access, [Folium](https://python-visualization.github.io/folium/latest/)
+for map generation and [Leaflet](https://leafletjs.com) for the map in the browser.
 
 ### Known limitations
-Garmin does not allow to download GPX for long activities (e.g. over 3 hours). You will get
-"too many 408 error responses" here and "This file is too large to export to GPX" when you try to
-download from the web.
-If it is just one activity or so, you can work around it with a couple of manual steps:
-- download FIT file instead of GPX
-- use some online converter to produce the GPX file, store it in data/gpx. Follow proper naming
-- add the activity to data/activities_list.csv manually. Follow proper formatting
-- use the utility mode to regenerate coordinates, adjust code just for this activity id. Search for
-    REGENERATE_COORDINATES
-- revert everything to BAU
+
+- **Very long activities.** Garmin Connect does not export GPX for very long activities
+  (roughly over 3 hours). The download then fails with "too many 408 error responses",
+  and the Garmin Connect website reports "This file is too large to export to GPX". To
+  add such an activity by hand:
+  1. Download its FIT file from Garmin Connect and convert it to GPX with an online
+     converter.
+  2. Save the GPX in `data/gpx/` and add the activity's row to
+     `data/activities_list.csv`, following the naming and format of the existing
+     entries.
+  3. Run the `REGENERATE_COORDINATES` utility mode to create its coordinate file.
+- **Upload change detection.** Incremental upload compares file sizes, so a data file
+  that changes without changing its size is not re-uploaded.
 
 ## Testing
 
-Tests live under `tests/` and run with [pytest](https://pytest.org):
+Tests live in `tests/` and run with [pytest](https://pytest.org):
 
 ```
 pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Most tests are pure-Python and cover the download/storage/map-generation/upload
-pipeline. Three modules — `tests/test_browser_mapy.py`,
-`tests/test_browser_area_select.py` and `tests/test_browser_tap_select.py` — are **browser tests**: they build a real
-map, serve it, and drive it in headless Chromium with
-[Playwright](https://playwright.dev/python/) to exercise the client-side
-JavaScript in `templates/activity_loader_template.html` (the Mapy.com
-attribution toggle, the area-selection tool and the tap picker). This is the only coverage the
-JavaScript gets, so it matters that they actually run.
-
-They are opt-in and **skip silently** unless both Playwright and a Chromium build
-are present. To enable them:
+Most tests are plain Python and cover the whole pipeline with Garmin Connect and FTP
+mocked. The `tests/test_browser_*.py` modules build a real map, serve it locally and
+drive it in headless Chromium with [Playwright](https://playwright.dev/python/). They
+are the only tests of the map's JavaScript. They skip silently unless Playwright and its
+Chromium build are installed:
 
 ```
-pip install -r requirements-dev.txt
 playwright install chromium
-python -m pytest tests/test_browser_area_select.py tests/test_browser_mapy.py tests/test_browser_tap_select.py
+python -m pytest tests/test_browser_*.py
 ```
 
-To check coverage:
-
-```
-coverage run -m pytest && coverage report -m
-```
-
-(`coverage` measures the Python side only; the browser tests report their own
-JS coverage indirectly by driving the page.)
+For Python coverage, run `coverage run -m pytest && coverage report -m`. More details
+are in [tests/README.md](tests/README.md).
 
 ## Contributing: keep personal data out
 
-This repo is public, but your working copy holds personal data (`data/`,
-`output/`, `.auth/`, `config-local.toml`). A pre-commit hook in `.githooks/`
-rejects commits that contain those paths, GPS track files, tokens, encrypted
-passwords, Garmin account fields, e-mail addresses, precise coordinates, or any
-credential value from your `config-local.toml`. Enable it once per clone:
+This repository is public, but a working copy holds personal data (`data/`, `output/`,
+`.auth/`, `config-local.toml`). A pre-commit hook in `.githooks/` rejects commits that
+contain those paths, GPS track files, tokens, encrypted passwords, Garmin account
+fields, e-mail addresses, precise coordinates, or any credential value from your
+`config-local.toml`. Enable it once per clone:
 
 ```
 git config core.hooksPath .githooks
 ```
 
-Add further private strings (your name, street…) to `.git/leak-guard-denylist`,
-one per line. `python3 .githooks/leak_guard.py --all` audits every tracked file.
-Test fixtures must use synthetic data: coordinates within 1° of (0, 0), with
-Garmin owner fields set to `null`.
+Add further private strings (your name, street, …) to `.git/leak-guard-denylist`, one
+per line. `python3 .githooks/leak_guard.py --all` audits every tracked file. Test
+fixtures must use synthetic data: coordinates within 1° of (0, 0), with Garmin owner
+fields set to `null`.
 
 ## Licensing and attribution
 
-This tool is released under the [MIT license](LICENSE). The Python and JavaScript
-libraries it builds on (Folium, Leaflet, noUiSlider, gpxpy, and so on) are all
-under permissive licenses (MIT / BSD / Apache-2.0).
+Garmin Activities Map is released under the [MIT license](LICENSE). The Python and
+JavaScript libraries it builds on (Folium, Leaflet, noUiSlider, gpxpy and others) use
+permissive licenses (MIT, BSD, Apache-2.0).
 
-The generated map embeds third-party map tiles, and the providers' terms require
-their attribution to stay visible. The tool renders these automatically - **do not
-remove them**:
+The generated map displays third-party map tiles, and the providers' terms require
+their attribution to stay visible. The map adds it automatically. **Do not remove it.**
 
-* **OpenStreetMap** - map data © OpenStreetMap contributors
-  ([ODbL](https://www.openstreetmap.org/copyright)); shown in the map's attribution
-  control. The built-in "OSM" background uses OpenStreetMap's own tile servers,
-  which are fine for a personal, low-traffic map but are subject to the
+- **OpenStreetMap:** map data © OpenStreetMap contributors
+  ([ODbL](https://www.openstreetmap.org/copyright)), shown in the map's attribution
+  control. The "OSM" background uses OpenStreetMap's own tile servers. That is fine for
+  a personal, low-traffic map, but it is subject to the
   [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
-* **CARTO** (Dark/Light/Voyager backgrounds) - credited to CARTO and OpenStreetMap;
-  requires your own CARTO API key (see above).
-* **Mapy.com / Seznam.cz** (Mapy.com backgrounds, formerly Mapy.cz) - requires your
-  own Mapy.com API key and, per
-  [their terms](https://developer.mapy.com/rest-api-mapy-cz/atribution/), a visible,
-  clickable Mapy.com logo (at least 30 px high) plus the "Seznam.cz a.s. and others"
-  copyright while a Mapy.com layer is active. The logo sits in the bottom-right corner
-  just above the map's attribution control, which carries the copyright; both are
-  rendered automatically and shown only when a Mapy.com background is selected.
+- **CARTO** (Light, Dark and Voyager backgrounds): credited to CARTO and OpenStreetMap.
+  Requires your own CARTO API key.
+- **Mapy.com / Seznam.cz** (Mapy.com backgrounds): requires your own Mapy.com API key.
+  [Their terms](https://developer.mapy.com/rest-api-mapy-cz/atribution/) also require a
+  visible, clickable Mapy.com logo (at least 30 px high) plus the "Seznam.cz a.s. and
+  others" copyright while a Mapy.com layer is shown. The map shows both automatically
+  when a Mapy.com background is selected: the logo in the bottom-right corner, the
+  copyright in the attribution control.
 
-## Links
+## Related projects
 
-* [Python: Garmin Connect](https://github.com/cyberjunky/python-garminconnect) - use Garmin Connect REST API from Python
-* [Garth](https://github.com/matin/garth) - lower level library for Garmin Connect API
-* [Folium](https://python-visualization.github.io/folium/latest/index.html) - map generator for Python
-* [Leaflet JS](https://leafletjs.com) - JavaScript library for maps
-* https://www.fitfileviewer.com - web FIT viewer
-* https://gpx.studio - web GPX viewer
+- [python-garminconnect](https://github.com/cyberjunky/python-garminconnect): Garmin
+  Connect API for Python
+- [Garth](https://github.com/matin/garth): lower-level Garmin Connect authentication
+  and API client
+- [Folium](https://python-visualization.github.io/folium/latest/): Leaflet maps from
+  Python
+- [Leaflet](https://leafletjs.com): JavaScript library for interactive maps
+- [StatsHunters](https://www.statshunters.com): a similar service for Strava users
+- [GarminDB](https://github.com/tcgoetz/GarminDB): a local database of Garmin data
+- [garmin-connect-export](https://github.com/pe-st/garmin-connect-export) and
+  [export_garmin](https://github.com/danmarg/export_garmin): Garmin Connect exporters
+- [fitdecode](https://github.com/polyvertex/fitdecode)
+  ([docs](https://fitdecode.readthedocs.io/en/latest/index.html)): FIT file decoding
+- [FIT File Viewer](https://www.fitfileviewer.com) and [gpx.studio](https://gpx.studio):
+  online FIT and GPX viewers
+- Articles on visualizing activities:
+  [Analysis and visualization of activities from Garmin Connect](https://medium.com/@azholud/analysis-and-visualization-of-activities-from-garmin-connect-b3e021c62472),
+  [Interesting heatmaps using Python Folium](https://medium.com/@vinodvidhole/interesting-heatmaps-using-python-folium-ee41b118a996)
 
+## Roadmap
 
-* related projects:
-  * https://github.com/tcgoetz/GarminDB - local database with Garmin activities
-  * https://github.com/pe-st/garmin-connect-export
-  * https://github.com/danmarg/export_garmin
-  * [StatsHunters](https://www.statshunters.com) - application serving similar purpose but for Strava
-* working with FIT files:
-  * https://fitdecode.readthedocs.io/en/latest/index.html
-  * https://github.com/polyvertex/fitdecode
-* how to visualize activities:
-  * https://medium.com/@azholud/analysis-and-visualization-of-activities-from-garmin-connect-b3e021c62472
-  * https://medium.com/@vinodvidhole/interesting-heatmaps-using-python-folium-ee41b118a996
-
-
-## Ideas, todos
-
-* garth decommissioning: `garth` (Garmin Connect auth, used via `garminconnect`) is being
-  retired, so the login needs to move to whatever replaces it
-* docs: revisit the documentation — change the tone of `docs/architecture.md` and
-  improve this README.
+- **Replace `garth`.** The Garmin Connect login uses `garth` (through
+  `garminconnect`), which is being retired, so login needs to move to its successor.
+- **Built-in screenshots.** Add a feature to the application that captures screenshots
+  of the generated map, e.g. for this README.
