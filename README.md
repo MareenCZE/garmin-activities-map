@@ -241,8 +241,8 @@ python -m pytest
 Most tests are plain Python and cover the whole pipeline with Garmin Connect and FTP
 mocked. The `tests/test_browser_*.py` modules build a real map, serve it locally and
 drive it in headless Chromium with [Playwright](https://playwright.dev/python/). They
-are the only tests of the map's JavaScript. They skip silently unless Playwright and its
-Chromium build are installed:
+are the only tests of the map's JavaScript. They skip unless Playwright and its Chromium
+build are installed, and pytest then ends with a warning saying what is missing:
 
 ```
 playwright install chromium

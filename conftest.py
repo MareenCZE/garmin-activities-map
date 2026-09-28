@@ -86,3 +86,25 @@ def make_activity(storage_module, **overrides):
     )
     kwargs.update(overrides)
     return storage_module.Activity(**kwargs)
+
+
+def pytest_terminal_summary(terminalreporter):
+    """Warn when the browser tests were skipped, since that is easy to miss.
+
+    The ``tests/test_browser_*.py`` modules skip when Playwright or its Chromium
+    build is missing, which leaves the map's JavaScript untested even on a green run.
+    """
+    reasons = sorted({
+        (str(report.longrepr[2]) if isinstance(report.longrepr, tuple) else str(report.longrepr)).splitlines()[0]
+        for report in terminalreporter.stats.get("skipped", [])
+        if "test_browser_" in report.nodeid
+    })
+    if not reasons:
+        return
+    terminalreporter.write_sep("=", "browser tests skipped", yellow=True, bold=True)
+    terminalreporter.write_line(
+        "The map's JavaScript was NOT tested. The browser tests need Playwright and its Chromium build:")
+    terminalreporter.write_line("    pip install -r requirements-dev.txt")
+    terminalreporter.write_line("    playwright install chromium")
+    for reason in reasons:
+        terminalreporter.write_line(f"  reason: {reason}")

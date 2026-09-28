@@ -33,8 +33,8 @@ For Python coverage: `coverage run -m pytest && coverage report -m`.
 The `test_browser_*.py` modules build a real map, serve it locally and drive it in
 headless Chromium to test the client-side JavaScript in
 `templates/activity_loader_template.html`, which pure-Python tests can't reach. They
-**skip silently** unless Playwright and a Chromium build are present, so a green run
-does not by itself mean they ran:
+**skip** unless Playwright and a Chromium build are present, so a green run does not by
+itself mean they ran; pytest then ends with a warning naming what is missing:
 
 ```bash
 playwright install chromium
