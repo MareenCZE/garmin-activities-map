@@ -1,6 +1,6 @@
 # Garmin Activities Map
 
-Garmin Activities Map turns your Garmin Connect history into an interactive web map of
+Garmin Activities Map is a Python command-line tool that turns your Garmin Connect history into an interactive web map of
 every route you have run, ridden, hiked or skied. It downloads your activities, keeps a
 local copy of them, and generates a map you can open in a browser or publish on your own
 website. At a glance you see where you have been, which trails you have already covered
@@ -319,3 +319,7 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
   `garminconnect`), which is being retired, so login needs to move to its successor.
 - **Built-in screenshots.** Add a feature to the application that captures screenshots
   of the generated map, e.g. for this README.
+- **Installer.** Replace the manual installation steps in this README (venv,
+  `pip install`, first configuration) with an installer script.
+- **More visible activity lines.** Make the routes stand out better against the base
+  map, e.g. with a semi-transparent fading layer between the tiles and the lines.
