@@ -43,7 +43,9 @@ overview, or a detailed outdoor map when exploring trails.
 
 ### Activity details
 
-Hovering over a track highlights it. Clicking it opens a popup with the activity name
+Hovering over a track highlights it and shows which way it went: small arrows along the
+line, a green ▶ marker at the start and a chequered one at the finish (a single split
+marker when the activity ends where it started). Repeated laps get one set of arrows. While a popup is open, hovering over other tracks doesn't highlight them. Clicking it opens a popup with the activity name
 and type, start date and time, distance, duration, total ascent and descent (when Garmin
 recorded them) and a link to the activity in Garmin Connect. The popup can be dragged
 aside by its title when it covers part of the map.
@@ -88,6 +90,8 @@ trails:
 - **Thin, see-through lines** draws the tracks thinner and partly transparent. Where
   tracks overlap they add up, so the paths you use most show strongest, like a heatmap.
 - **Map opacity** fades the map, down to 20 %, so the tracks stand out.
+- **Show direction** turns the arrows and start/finish markers on a highlighted track
+  on or off.
 
 The browser remembers these settings.
 
@@ -334,6 +338,3 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
   of the generated map, e.g. for this README.
 - **Installer.** Replace the manual installation steps in this README (venv,
   `pip install`, first configuration) with an installer script.
-- **Activity direction.** Show which way an activity went along its track, e.g. with
-  small arrows along the line, and mark its start and finish, e.g. with distinct
-  markers at both ends.

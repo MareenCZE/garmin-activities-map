@@ -238,14 +238,15 @@ becomes a polyline in its category colour.
   area-selection button, the display-settings button and the zoom bar
   (`arrangeTopRightControls`); the menu button hides and shows all the other controls.
 - **Display settings** (`initializeDisplaySettings`). The gear button opens a dialog
-  with three settings, all remembered in `localStorage` (`activitiesMap.displaySettings`).
+  with four settings, all remembered in `localStorage` (`activitiesMap.displaySettings`).
   *Line width* sets the track width, 1–5 px in 0.5 px steps (default 2 px, opacity 0.8).
   *Thin, see-through lines* draws the tracks at 75 % of that width and 0.35 opacity, so
   at the default width they are 1.5 px. Every place that restores a track after a
   highlight calls `trackStyle(activity)`, so the settings hold after a hover or popup.
   *Map opacity* (20–100 %) sets the opacity of Leaflet's `tilePane` over a white map
   background. That fades every base layer but not the tracks, the Mapy.com logo or the
-  attribution. The dialog stays open while the map is used; the gear, its close
+  attribution. *Show direction* (default on) turns the chevrons and start/finish markers
+  of highlighted tracks on or off (`applyShowDirection`). The dialog stays open while the map is used; the gear, its close
   button, Escape or folding the controls closes it.
 - **Background and activity types** (`initializeLayerSelects`). A `<select>` picks the
   background map, and a multi-select dropdown with counts and All/None shortcuts picks
@@ -269,7 +270,28 @@ Connect; distance and duration; and total ascent and descent when present. Icons
 Material Symbols (Apache 2.0) inlined as SVG paths, and `ACTIVITY_TYPE_ICONS` maps
 Garmin `type_key`s to them.
 
-Hovering over a track, or opening its popup, highlights it. A popup can be dragged
+Hovering over a track, opening its popup or hovering its row in the selection dialog
+highlights it (`highlightTrack` / `unhighlightTrack`, style `TRACK_HIGHLIGHT_STYLE`).
+While a popup is open, hovering over other tracks does nothing, so the open track stays
+the only one highlighted; rows in the selection dialog still highlight on hover.
+A highlighted track shows its direction (`showTrackDirection`):
+
+- Grey chevrons every `DIRECTION_CHEVRON_SPACING` (110) screen pixels, pointing the way
+  the coordinates were recorded. A chevron is skipped when one pointing the same way is
+  already within `DIRECTION_REPEAT_PX` (laps); on an out-and-back both directions show. They are short polylines in their own pane
+  (`trackDirectionPane`, above the tracks, `pointer-events: none`) and are rebuilt on
+  `zoomend`. They must not share the overlay pane: the hovered track would then no longer
+  be its last path, so every `mouseover`'s `bringToFront` would re-append it, the browser
+  would fire `mouseover` again, and a click landing in that loop would be lost.
+- A start marker (green ▶) and a finish marker (chequered), or one split marker when
+  start and finish are within `DIRECTION_LOOP_MAX_GAP` (150 m). They are non-interactive
+  `divIcon` markers styled with CSS.
+
+Several tracks can show direction at once (an open popup plus a hovered row in the
+selection dialog), so the decorations are kept per track in `trackDirections` and
+dropped when a track is removed from the map, or the setting is switched off.
+
+A popup can be dragged
 aside by its title (`enablePopupDragging`, based on `L.Draggable`). The drag is stored
 in the popup's pixel offset, so the popup keeps its position relative to the track while
 the map is panned or zoomed; the popup's tip is hidden once it has been moved. A press

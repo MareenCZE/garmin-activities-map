@@ -676,8 +676,8 @@ function isPopupOpen(polyline) {
     return !!popup && (popup.isOpen ? popup.isOpen() : (polyline._map && polyline._map.hasLayer(popup)));
 }
 
-// The track whose popup is open. Hovering other tracks (or their rows in the
-// selection dialog) raises them over it; raiseOpenPopupTrack puts it back on top.
+// The track whose popup is open. Hovering rows in the selection dialog raises
+// other tracks over it; raiseOpenPopupTrack puts it back on top.
 let openPopupTrack = null;
 
 function raiseOpenPopupTrack() {
@@ -717,10 +717,11 @@ function loadDisplaySettings() {
             thinLines: saved.thinLines === true,
             lineWidth: 'lineWidth' in saved ? clampLineWidth(saved.lineWidth) : LINE_WIDTH_DEFAULT,
             mapOpacity: 'mapOpacity' in saved ? clampMapOpacity(saved.mapOpacity) : 100,
+            showDirection: saved.showDirection !== false,
         };
     } catch (e) {
         // storage blocked or corrupt
-        return { thinLines: false, lineWidth: LINE_WIDTH_DEFAULT, mapOpacity: 100 };
+        return { thinLines: false, lineWidth: LINE_WIDTH_DEFAULT, mapOpacity: 100, showDirection: true };
     }
 }
 
@@ -744,14 +745,191 @@ function trackStyle(activity) {
         : { color: activity.color, weight: width, opacity: TRACK_OPACITY };
 }
 
+/* ============================================================================
+ * Direction of a highlighted track: chevrons along the line pointing the way it
+ * was recorded, plus start and finish markers (one split marker for a loop).
+ * Shown on every highlight (hover, open popup, selection-list row hover) and
+ * dropped when the track goes back to its resting style.
+ * ========================================================================== */
+const TRACK_HIGHLIGHT_STYLE = { color: '#00FF00', weight: 5, opacity: 1.0 }; // shiny saturated green
+const DIRECTION_CHEVRON_SPACING = 110;  // px along the line, so the same at every zoom
+const DIRECTION_CHEVRON_LENGTH = 2.5;   // px from the chevron's middle to its tip
+const DIRECTION_CHEVRON_HALF_WIDTH = 3; // px from the line to a chevron arm's end
+const DIRECTION_CHEVRON_STYLE = { color: '#4d4d4d', weight: 1.5, opacity: 0.8, lineCap: 'round', lineJoin: 'round' };
+// A chevron is skipped when one pointing roughly the same way is already this
+// close (repeated laps of a track or loop).
+const DIRECTION_REPEAT_PX = DIRECTION_CHEVRON_SPACING * 0.6;
+const DIRECTION_LOOP_MAX_GAP = 150;     // metres; closer start and finish get one marker
+
+// polyline -> { chevrons: L.LayerGroup, markers: L.LayerGroup }
+const trackDirections = new Map();
+// Highlighted tracks, so the "show direction" setting can apply to them at once.
+const highlightedTracks = new Set();
+let trackDirectionStylesInjected = false;
+let directionRenderer = null;
+
+/**
+ * Chevrons get their own pane above the tracks, so a highlighted track can stay
+ * the last path in the overlay pane. If they shared it, every mouseover's
+ * bringToFront would re-append the hovered path, the browser would fire another
+ * mouseover, and a click landing mid-loop would lose its target.
+ */
+function getDirectionRenderer() {
+    if (!directionRenderer) {
+        const pane = mapInstance.createPane('trackDirectionPane');
+        pane.style.zIndex = 450;            // over the tracks (400), under markers (600)
+        pane.style.pointerEvents = 'none';  // hover and taps go to the track below
+        directionRenderer = L.svg({ pane: 'trackDirectionPane' });
+    }
+    return directionRenderer;
+}
+
+function injectTrackDirectionStyles() {
+    if (trackDirectionStylesInjected) return;
+    trackDirectionStylesInjected = true;
+    const style = document.createElement('style');
+    style.textContent = `
+        .track-end { background: none; border: none; }
+        .track-end div {
+            box-sizing: border-box; width: 100%; height: 100%; border-radius: 50%;
+            border: 2.5px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.45);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .track-end-start div { background: #1a9d49; }
+        .track-end-finish div {
+            border-color: #222;
+            background: repeating-conic-gradient(#222 0 25%, #fff 0 50%) 50% 50% / 6px 6px;
+        }
+        .track-end-loop div {
+            background: linear-gradient(to right, #1a9d49 50%, transparent 50%),
+                        repeating-conic-gradient(#222 0 25%, #fff 0 50%) 50% 50% / 6px 6px;
+            justify-content: flex-start; padding-left: 3px;
+        }
+        .track-end svg { display: block; }
+    `;
+    document.head.appendChild(style);
+}
+
+const TRACK_END_PLAY = '<svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 1 L9 5 L2 9 Z" fill="#fff"/></svg>';
+
+function trackEndMarker(latlng, kind) {
+    const size = kind === 'loop' ? 24 : 22;
+    const inner = kind === 'finish' ? '' : TRACK_END_PLAY;
+    return L.marker(latlng, {
+        icon: L.divIcon({
+            className: `track-end track-end-${kind}`,
+            html: `<div>${inner}</div>`,
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+        }),
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: kind === 'finish' ? 0 : 100, // start on top if they overlap
+    });
+}
+
+/** The track as screen segments: ends, unit direction, and where each starts along it. */
+function screenSegments(polyline) {
+    const points = polyline.getLatLngs().map(ll => mapInstance.latLngToLayerPoint(ll));
+    const segments = [];
+    let run = 0;
+    for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1], b = points[i];
+        const len = a.distanceTo(b);
+        if (len === 0) continue;
+        segments.push({ a, b, len, start: run, dx: (b.x - a.x) / len, dy: (b.y - a.y) / len });
+        run += len;
+    }
+    return segments;
+}
+
+/**
+ * Chevrons every DIRECTION_CHEVRON_SPACING screen pixels along the track, drawn
+ * as short lines so they sit exactly on it. Repeats of the same direction (laps)
+ * are dropped. Placed in layer-point space, so they are rebuilt after each zoom.
+ */
+function buildDirectionChevrons(polyline, group) {
+    group.clearLayers();
+    const segments = screenSegments(polyline);
+    const placed = [];
+    let i = 0;
+    for (const s of segments) {
+        const end = s.start + s.len;
+        for (; i * DIRECTION_CHEVRON_SPACING + DIRECTION_CHEVRON_SPACING / 2 <= end; i++) {
+            const at = i * DIRECTION_CHEVRON_SPACING + DIRECTION_CHEVRON_SPACING / 2;
+            const t = at - s.start;
+            const p = L.point(s.a.x + s.dx * t, s.a.y + s.dy * t);
+            const repeat = placed.some(c => c.dx * s.dx + c.dy * s.dy > 0.5 &&
+                                            c.p.distanceTo(p) < DIRECTION_REPEAT_PX);
+            if (repeat) continue;
+            placed.push({ p, dx: s.dx, dy: s.dy });
+
+            const tip = L.point(p.x + s.dx * DIRECTION_CHEVRON_LENGTH, p.y + s.dy * DIRECTION_CHEVRON_LENGTH);
+            const back = L.point(p.x - s.dx * DIRECTION_CHEVRON_LENGTH, p.y - s.dy * DIRECTION_CHEVRON_LENGTH);
+            const nx = -s.dy * DIRECTION_CHEVRON_HALF_WIDTH, ny = s.dx * DIRECTION_CHEVRON_HALF_WIDTH;
+            const arms = [L.point(back.x + nx, back.y + ny), tip, L.point(back.x - nx, back.y - ny)];
+            group.addLayer(L.polyline(arms.map(q => mapInstance.layerPointToLatLng(q)),
+                Object.assign({ interactive: false, renderer: getDirectionRenderer() }, DIRECTION_CHEVRON_STYLE)));
+        }
+    }
+}
+
+function showTrackDirection(polyline) {
+    if (!mapInstance || !displaySettings.showDirection || trackDirections.has(polyline)) return;
+    const latlngs = polyline.getLatLngs();
+    if (latlngs.length < 2) return;
+    injectTrackDirectionStyles();
+
+    const chevrons = L.layerGroup();
+    buildDirectionChevrons(polyline, chevrons);
+    chevrons.addTo(mapInstance);
+
+    const markers = L.layerGroup();
+    const start = latlngs[0], finish = latlngs[latlngs.length - 1];
+    if (mapInstance.distance(start, finish) <= DIRECTION_LOOP_MAX_GAP) {
+        markers.addLayer(trackEndMarker(start, 'loop'));
+    } else {
+        markers.addLayer(trackEndMarker(finish, 'finish'));
+        markers.addLayer(trackEndMarker(start, 'start'));
+    }
+    markers.addTo(mapInstance);
+
+    trackDirections.set(polyline, { chevrons, markers });
+}
+
+function hideTrackDirection(polyline) {
+    const direction = trackDirections.get(polyline);
+    if (!direction) return;
+    mapInstance.removeLayer(direction.chevrons);
+    mapInstance.removeLayer(direction.markers);
+    trackDirections.delete(polyline);
+}
+
+function highlightTrack(polyline) {
+    polyline.setStyle(TRACK_HIGHLIGHT_STYLE);
+    polyline.bringToFront();
+    highlightedTracks.add(polyline);
+    showTrackDirection(polyline);
+}
+
+function unhighlightTrack(polyline) {
+    polyline.setStyle(trackStyle(polyline.activityData));
+    highlightedTracks.delete(polyline);
+    hideTrackDirection(polyline);
+}
+
+/** Show or hide direction on the highlighted tracks after the setting changed. */
+function applyShowDirection() {
+    highlightedTracks.forEach(polyline =>
+        displaySettings.showDirection ? showTrackDirection(polyline) : hideTrackDirection(polyline));
+}
+
+function rebuildDirectionChevrons() {
+    trackDirections.forEach((direction, polyline) => buildDirectionChevrons(polyline, direction.chevrons));
+}
+
 function createPolylineForActivity(activity) {
     if (!activity.coordinates || activity.coordinates.length === 0) return null;
-
-    const highlightStyle = {
-        color: '#00FF00', // Shiny saturated green
-        weight: 5,
-        opacity: 1.0
-    };
 
     const polyline = L.polyline(activity.coordinates, trackStyle(activity));
 
@@ -775,27 +953,34 @@ function createPolylineForActivity(activity) {
     });
 
     if (manifest.config && manifest.config.enable_highlighting) {
+        // While a popup is open, hovering other tracks leaves them alone, so the
+        // open track stays the only highlighted one.
         polyline.on('mouseover', function() {
-            this.setStyle(highlightStyle);
-            this.bringToFront();
+            if (openPopupTrack && openPopupTrack !== this) return;
+            highlightTrack(this);
         });
 
         polyline.on('mouseout', function() {
+            if (openPopupTrack && openPopupTrack !== this) return;
             if (!isPopupOpen(this)) {
-                this.setStyle(trackStyle(activity));
+                unhighlightTrack(this);
                 raiseOpenPopupTrack();
             }
         });
 
         polyline.on('popupopen', function() {
-            this.setStyle(highlightStyle);
-            this.bringToFront();
+            highlightTrack(this);
         });
 
         polyline.on('popupclose', function() {
-            this.setStyle(trackStyle(activity));
+            unhighlightTrack(this);
         });
     }
+    // Redrawing a category (date range, type filter) drops its tracks.
+    polyline.on('remove', function() {
+        highlightedTracks.delete(this);
+        hideTrackDirection(this);
+    });
 
     polyline.activityDate = activity.date;
     polyline.activityData = activity;
@@ -847,6 +1032,8 @@ function setupMapEventListeners() {
     }
 
     console.log('Setting up map event listeners');
+
+    mapInstance.on('zoomend', rebuildDirectionChevrons);
 
     mapInstance.on('overlayadd', async function(e) {
         const categoryName = getCategoryNameFromEvent(e);
@@ -1424,7 +1611,8 @@ function initializeMapyAttribution() {
 
 /* ============================================================================
  * Display settings: a gear button in the top-right column opens a small dialog
- * with a line-width slider, "thin, see-through lines" and a base-map opacity slider. Changes apply
+ * with a line-width slider, "thin, see-through lines", a base-map opacity slider and a
+ * "show direction" switch for highlighted tracks. Changes apply
  * live and are remembered per browser (displaySettings, above).
  * ========================================================================== */
 const DISPLAY_SETTINGS_ICON =
@@ -1589,6 +1777,10 @@ function initializeDisplaySettings() {
                 <input type="range" id="map-opacity-slider" min="${MAP_OPACITY_MIN}" max="100" step="5">
                 <div class="ds-hint">Lower it to make the tracks stand out.</div>
             </div>
+            <div>
+                <label><input type="checkbox" id="show-direction-toggle"> Show direction</label>
+                <div class="ds-hint">Arrows, start and finish on the highlighted track.</div>
+            </div>
         </div>
     `;
     document.body.appendChild(dialog);
@@ -1600,12 +1792,14 @@ function initializeDisplaySettings() {
     const thinToggle = dialog.querySelector('#thin-lines-toggle');
     const opacitySlider = dialog.querySelector('#map-opacity-slider');
     const opacityValue = dialog.querySelector('#map-opacity-value');
+    const directionToggle = dialog.querySelector('#show-direction-toggle');
 
     widthSlider.value = String(displaySettings.lineWidth);
     widthValue.textContent = `${displaySettings.lineWidth} px`;
     thinToggle.checked = displaySettings.thinLines;
     opacitySlider.value = String(displaySettings.mapOpacity);
     opacityValue.textContent = `${displaySettings.mapOpacity} %`;
+    directionToggle.checked = displaySettings.showDirection;
 
     widthSlider.addEventListener('input', function() {
         displaySettings.lineWidth = clampLineWidth(widthSlider.value);
@@ -1623,6 +1817,11 @@ function initializeDisplaySettings() {
         opacityValue.textContent = `${displaySettings.mapOpacity} %`;
         saveDisplaySettings();
         applyMapOpacity();
+    });
+    directionToggle.addEventListener('change', function() {
+        displaySettings.showDirection = directionToggle.checked;
+        saveDisplaySettings();
+        applyShowDirection();
     });
     dialog.querySelector('#display-settings-close').onclick = function() {
         setDisplaySettingsOpen(false);
@@ -1654,8 +1853,6 @@ let areaSelectEndedAt = 0;         // time the last drag ended; its trailing cli
 let tapSelectLatLng = null;        // L.LatLng of the tap whose nearby activities the dialog lists
 let tapSelectTolerancePx = 0;      // pick radius used for that tap
 let selectionRefreshScheduled = false;
-
-const AREA_SELECT_HIGHLIGHT_STYLE = { color: '#00FF00', weight: 5, opacity: 1.0 };
 
 // A dashed rectangle with a cursor pointer in its lower-right corner. Distinct
 // from the zoom "+" it sits next to.
@@ -2023,8 +2220,7 @@ function showSelectionDialog() {
         if (!item || !item.polyline) return;
         row.addEventListener('mouseenter', function() {
             row.style.background = 'rgba(0,124,186,0.10)';
-            item.polyline.setStyle(AREA_SELECT_HIGHLIGHT_STYLE);
-            item.polyline.bringToFront();
+            highlightTrack(item.polyline);
         });
         row.addEventListener('mouseleave', function() {
             row.style.background = '';
@@ -2032,9 +2228,9 @@ function showSelectionDialog() {
             // the highlight of a track whose popup the row click opened; that
             // popup's close resets the style instead.
             if (isPopupOpen(item.polyline)) {
-                item.polyline.once('popupclose', function() { this.setStyle(trackStyle(item.activity)); });
+                item.polyline.once('popupclose', function() { unhighlightTrack(this); });
             } else {
-                item.polyline.setStyle(trackStyle(item.activity));
+                unhighlightTrack(item.polyline);
                 raiseOpenPopupTrack();
             }
         });
@@ -2046,7 +2242,7 @@ function showSelectionDialog() {
             // as the rows are the only way to see which track is which. A rectangle
             // list always stays: it is closed with its own button.
             if (tapSelectLatLng && !isCoarsePointer(e)) {
-                item.polyline.once('popupclose', function() { this.setStyle(trackStyle(item.activity)); });
+                item.polyline.once('popupclose', function() { unhighlightTrack(this); });
                 clearSelection();
             }
         });
