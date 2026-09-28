@@ -79,10 +79,10 @@ mapping = [
     { name = "Running", color = "magenta", type_keys = ["running", "track_running", "trail_running"] },
     { name = "Inline", color = "dodgerblue", type_keys = ["inline_skating"] },
     { name = "Skiing", color = "red", type_keys = ["resort_skiing", "resort_snowboarding", "resort_skiing_snowboarding_ws"] },
-    { name = "Crosscountry", color = "blueviolet", type_keys = ["skate_skiing_ws", "cross_country_skiing_ws"] },
+    { name = "Crosscountry", color = "deeppink", type_keys = ["skate_skiing_ws", "cross_country_skiing_ws"] },
     { name = "Skimo", color = "#fc3d17", type_keys = ["backcountry_skiing"] },
     { name = "Hiking", color = "brown", type_keys = ["hiking", "walking"] },
-    { name = "Cycling", color = "deeppink", type_keys = ["cycling", "mountain_biking", "gravel_cycling"] }
+    { name = "Cycling", color = "blueviolet", type_keys = ["cycling", "mountain_biking", "gravel_cycling"] }
 ]
 # Define which categories are displayed when you open the page. Activities from other categories will not be displayed by default but
 # user can easily toggle categories on and off.
