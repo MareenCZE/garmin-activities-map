@@ -536,6 +536,7 @@ function injectActivityPopupStyles() {
         }
         .ap-m { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 13px; font-weight: bold; color: #222; }
         .ap-m .ap-i { width: 16px; height: 16px; color: #8a8a8a; }
+        .ap-m.ap-elev { font-weight: normal; }
     `;
     document.head.appendChild(style);
 }
@@ -553,8 +554,8 @@ function createActivityPopupHtml(activity, garminConnectUrl) {
     const link = garminConnectUrl
         ? `<a href="${garminConnectUrl}${activity.activity_id}" target="_blank" rel="noopener" title="Open in Garmin Connect" aria-label="Open in Garmin Connect">${popupIcon('open_in_new')}</a>`
         : '';
-    const metric = (icon, label, value) =>
-        `<span class="ap-m" title="${label}">${popupIcon(icon, label)}${value}</span>`;
+    const metric = (icon, label, value, extraClass = '') =>
+        `<span class="ap-m${extraClass ? ' ' + extraClass : ''}" title="${label}">${popupIcon(icon, label)}${value}</span>`;
 
     return `
     <div class="ap">
@@ -563,8 +564,8 @@ function createActivityPopupHtml(activity, garminConnectUrl) {
         <div class="ap-metrics">
             ${metric('route', 'Distance', formatUnit(Number(activity.distance) || 0, 'kilometer', 1))}
             ${metric('schedule', 'Duration', formatDuration(activity.duration))}
-            ${activity.elevation_gain != null ? metric('trending_up', 'Total ascent', formatUnit(activity.elevation_gain, 'meter', 0)) : ''}
-            ${activity.elevation_loss != null ? metric('trending_down', 'Total descent', formatUnit(activity.elevation_loss, 'meter', 0)) : ''}
+            ${activity.elevation_gain != null ? metric('trending_up', 'Total ascent', formatUnit(activity.elevation_gain, 'meter', 0), 'ap-elev') : ''}
+            ${activity.elevation_loss != null ? metric('trending_down', 'Total descent', formatUnit(activity.elevation_loss, 'meter', 0), 'ap-elev') : ''}
         </div>
     </div>
     `;
