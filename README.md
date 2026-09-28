@@ -334,3 +334,6 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
   of the generated map, e.g. for this README.
 - **Installer.** Replace the manual installation steps in this README (venv,
   `pip install`, first configuration) with an installer script.
+- **Activity direction.** Show which way an activity went along its track, e.g. with
+  small arrows along the line, and mark its start and finish, e.g. with distinct
+  markers at both ends.
