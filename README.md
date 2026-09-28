@@ -78,6 +78,19 @@ can be turned off with `enable-area-selection = false` under `[activities]`.
 
 ![Area selection with totals](images/area-selection.png)
 
+### Display settings
+
+The gear button under the area-selection button opens the display settings. Use them
+when tracks are hard to see on a busy map, such as Mapy.com Outdoor with its coloured
+trails:
+
+- **Line width** sets how wide the tracks are drawn, from 1 to 5 px.
+- **Thin, see-through lines** draws the tracks thinner and partly transparent. Where
+  tracks overlap they add up, so the paths you use most show strongest, like a heatmap.
+- **Map opacity** fades the map, down to 20 %, so the tracks stand out.
+
+The browser remembers these settings.
+
 ## Getting started
 
 ### Requirements
@@ -321,5 +334,3 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
   of the generated map, e.g. for this README.
 - **Installer.** Replace the manual installation steps in this README (venv,
   `pip install`, first configuration) with an installer script.
-- **More visible activity lines.** Make the routes stand out better against the base
-  map, e.g. with a semi-transparent fading layer between the tiles and the lines.

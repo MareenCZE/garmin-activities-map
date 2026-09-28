@@ -638,6 +638,7 @@ async function loadManifest() {
         initializeToggleControl();
         initializeMapyAttribution();
         initializeAreaSelection();
+        initializeDisplaySettings();
         initializeTapSelection();
         arrangeTopRightControls();
 
@@ -683,14 +684,68 @@ function raiseOpenPopupTrack() {
     if (openPopupTrack && openPopupTrack._map) openPopupTrack.bringToFront();
 }
 
+// Display settings (the gear button's dialog), remembered per browser like the
+// date preset. Both help tracks stand out on busy base maps such as Mapy.com Outdoor.
+const DISPLAY_SETTINGS_STORAGE_KEY = 'activitiesMap.displaySettings';
+const TRACK_OPACITY = 0.8;
+// Thin, see-through lines: overlapping tracks add up, so the paths used most show
+// strongest (like a heatmap) and the map stays readable between them. The width is
+// a share of the chosen line width, so the two settings combine.
+const THIN_TRACK_OPACITY = 0.35;
+const THIN_TRACK_WIDTH_FACTOR = 0.75;
+const LINE_WIDTH_DEFAULT = 2;  // px
+const LINE_WIDTH_MIN = 1;
+const LINE_WIDTH_MAX = 5;
+const MAP_OPACITY_MIN = 20;  // percent; below this the base map is barely there
+
+function clampMapOpacity(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 100;
+    return Math.min(100, Math.max(MAP_OPACITY_MIN, Math.round(n)));
+}
+
+function clampLineWidth(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return LINE_WIDTH_DEFAULT;
+    return Math.min(LINE_WIDTH_MAX, Math.max(LINE_WIDTH_MIN, Math.round(n * 2) / 2));
+}
+
+function loadDisplaySettings() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(DISPLAY_SETTINGS_STORAGE_KEY) || '{}') || {};
+        return {
+            thinLines: saved.thinLines === true,
+            lineWidth: 'lineWidth' in saved ? clampLineWidth(saved.lineWidth) : LINE_WIDTH_DEFAULT,
+            mapOpacity: 'mapOpacity' in saved ? clampMapOpacity(saved.mapOpacity) : 100,
+        };
+    } catch (e) {
+        // storage blocked or corrupt
+        return { thinLines: false, lineWidth: LINE_WIDTH_DEFAULT, mapOpacity: 100 };
+    }
+}
+
+function saveDisplaySettings() {
+    try {
+        localStorage.setItem(DISPLAY_SETTINGS_STORAGE_KEY, JSON.stringify(displaySettings));
+    } catch (e) { /* storage blocked: the settings just aren't remembered */ }
+}
+
+let displaySettings = loadDisplaySettings();
+
+/**
+ * A track's resting style. Width and opacity follow the "line width" and "thin
+ * lines" display settings, so it is looked up on every restore rather than
+ * captured once.
+ */
+function trackStyle(activity) {
+    const width = displaySettings.lineWidth;
+    return displaySettings.thinLines
+        ? { color: activity.color, weight: width * THIN_TRACK_WIDTH_FACTOR, opacity: THIN_TRACK_OPACITY }
+        : { color: activity.color, weight: width, opacity: TRACK_OPACITY };
+}
+
 function createPolylineForActivity(activity) {
     if (!activity.coordinates || activity.coordinates.length === 0) return null;
-
-    const normalStyle = {
-        color: activity.color,
-        weight: 2,
-        opacity: 0.8
-    };
 
     const highlightStyle = {
         color: '#00FF00', // Shiny saturated green
@@ -698,7 +753,7 @@ function createPolylineForActivity(activity) {
         opacity: 1.0
     };
 
-    const polyline = L.polyline(activity.coordinates, normalStyle);
+    const polyline = L.polyline(activity.coordinates, trackStyle(activity));
 
     const garminConnectUrl = manifest.config && manifest.config.garmin_connect_url
         ? manifest.config.garmin_connect_url
@@ -727,7 +782,7 @@ function createPolylineForActivity(activity) {
 
         polyline.on('mouseout', function() {
             if (!isPopupOpen(this)) {
-                this.setStyle(normalStyle);
+                this.setStyle(trackStyle(activity));
                 raiseOpenPopupTrack();
             }
         });
@@ -738,7 +793,7 @@ function createPolylineForActivity(activity) {
         });
 
         polyline.on('popupclose', function() {
-            this.setStyle(normalStyle);
+            this.setStyle(trackStyle(activity));
         });
     }
 
@@ -1267,8 +1322,8 @@ function initializeToggleControl() {
 }
 
 /**
- * The top-right column, top to bottom: hamburger, area-select tool, zoom bar.
- * Leaflet puts the zoom control in the top-left corner by default.
+ * The top-right column, top to bottom: hamburger, area-select tool, display
+ * settings, zoom bar. Leaflet puts the zoom control in the top-left corner by default.
  */
 function arrangeTopRightControls() {
     const corner = mapInstance._controlCorners.topright;
@@ -1276,6 +1331,7 @@ function arrangeTopRightControls() {
     const column = [
         hamburger && hamburger.parentElement,
         document.getElementById('area-select-bar'),
+        document.getElementById('display-settings-bar'),
         mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
     ].filter(Boolean);
     column.reverse().forEach(el => corner.prepend(el));
@@ -1285,11 +1341,13 @@ let mapControlsFolded = false;
 
 function toggleMapControls() {
     // The hamburger folds everything but itself: the top-left corner (date panel,
-    // tiles/types dropdowns) and the buttons under it (area select, zoom).
+    // tiles/types dropdowns) and the buttons under it (area select, display
+    // settings, zoom).
     mapControlsFolded = !mapControlsFolded;
     const folded = [
         mapInstance._controlCorners.topleft,
         document.getElementById('area-select-bar'),
+        document.getElementById('display-settings-bar'),
         mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
     ];
     folded.forEach(function(el) {
@@ -1297,6 +1355,7 @@ function toggleMapControls() {
     });
     const typeMenu = document.getElementById('type-filter-menu');
     if (typeMenu) typeMenu.classList.remove('open');
+    if (mapControlsFolded) setDisplaySettingsOpen(false);
 }
 
 /**
@@ -1364,6 +1423,219 @@ function initializeMapyAttribution() {
 }
 
 /* ============================================================================
+ * Display settings: a gear button in the top-right column opens a small dialog
+ * with a line-width slider, "thin, see-through lines" and a base-map opacity slider. Changes apply
+ * live and are remembered per browser (displaySettings, above).
+ * ========================================================================== */
+const DISPLAY_SETTINGS_ICON =
+    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor">' +
+    '<path d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/>' +
+    '</svg>';
+
+/** Restyle the drawn tracks after the line width or thin-lines setting changed. */
+function applyTrackLines() {
+    for (const layer of Object.values(layerGroups)) {
+        if (!layer || !layer.eachLayer) continue;
+        layer.eachLayer(function(polyline) {
+            // A track with an open popup stays highlighted; its close restores it.
+            if (polyline.activityData && !isPopupOpen(polyline)) {
+                polyline.setStyle(trackStyle(polyline.activityData));
+            }
+        });
+    }
+}
+
+/** Fade the base map (all tile layers) over a white ground; tracks stay opaque. */
+function applyMapOpacity() {
+    const faded = displaySettings.mapOpacity < 100;
+    mapInstance.getPane('tilePane').style.opacity = faded ? String(displaySettings.mapOpacity / 100) : '';
+    mapInstance.getContainer().style.background = faded ? '#fff' : '';
+}
+
+function setDisplaySettingsOpen(open) {
+    const dialog = document.getElementById('display-settings-dialog');
+    const button = document.querySelector('.leaflet-control-display-settings');
+    if (!dialog || !button) return;
+    if (open) {
+        // Level with the gear button, left of the button column.
+        const top = Math.round(button.getBoundingClientRect().top);
+        dialog.style.top = `${top}px`;
+    }
+    dialog.hidden = !open;
+    button.setAttribute('aria-expanded', String(open));
+}
+
+function initializeDisplaySettings() {
+    if (!mapInstance) return;
+
+    const style = document.createElement('style');
+    style.textContent = `
+        #display-settings-dialog {
+            position: absolute;
+            right: 60px;
+            width: 260px;
+            max-width: calc(100vw - 70px);
+            z-index: 1002;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            color: #333;
+        }
+        #display-settings-dialog[hidden] { display: none; }
+        #display-settings-dialog .ds-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+        #display-settings-dialog .ds-close {
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            color: #666;
+            padding: 0 4px;
+            background: none;
+            border: none;
+        }
+        #display-settings-dialog .ds-body {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 10px;
+        }
+        #display-settings-dialog label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        #display-settings-dialog .ds-hint {
+            color: #777;
+            margin-top: 2px;
+        }
+        #display-settings-dialog .ds-row {
+            display: flex;
+            justify-content: space-between;
+        }
+        #display-settings-dialog input[type="range"] {
+            width: 100%;
+            margin: 4px 0 0;
+        }
+    `;
+    document.head.appendChild(style);
+
+    const button = L.DomUtil.create('a', 'leaflet-control-display-settings');
+    button.href = '#';
+    button.title = 'Display settings';
+    button.role = 'button';
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-expanded', 'false');
+    button.innerHTML = DISPLAY_SETTINGS_ICON;
+    button.style.cssText = 'display:flex;align-items:center;justify-content:center;cursor:pointer;';
+    button.onclick = function(e) {
+        L.DomEvent.stop(e);
+        const dialog = document.getElementById('display-settings-dialog');
+        setDisplaySettingsOpen(!!dialog && dialog.hidden);
+    };
+    L.DomEvent.disableClickPropagation(button);
+
+    // Its own bar under the area-select one (arrangeTopRightControls); it folds
+    // away with the hamburger (see toggleMapControls).
+    const DisplaySettingsControl = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function() {
+            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+            container.id = 'display-settings-bar';
+            container.appendChild(button);
+            return container;
+        }
+    });
+    mapInstance.addControl(new DisplaySettingsControl());
+
+    // The dialog stays open while the map is panned or zoomed, so the effect can
+    // be judged in place; the gear, the close button or Escape close it.
+    const dialog = document.createElement('div');
+    dialog.id = 'display-settings-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-label', 'Display settings');
+    dialog.hidden = true;
+    dialog.innerHTML = `
+        <div class="ds-head">
+            <strong style="font-size:13px;">Display settings</strong>
+            <button type="button" class="ds-close" id="display-settings-close" title="Close">✕</button>
+        </div>
+        <div class="ds-body">
+            <div>
+                <div class="ds-row">
+                    <label for="line-width-slider">Line width</label>
+                    <span id="line-width-value"></span>
+                </div>
+                <input type="range" id="line-width-slider" min="${LINE_WIDTH_MIN}" max="${LINE_WIDTH_MAX}" step="0.5">
+            </div>
+            <div>
+                <label><input type="checkbox" id="thin-lines-toggle"> Thin, see-through lines</label>
+                <div class="ds-hint">Paths you use most show strongest, like a heatmap.</div>
+            </div>
+            <div>
+                <div class="ds-row">
+                    <label for="map-opacity-slider">Map opacity</label>
+                    <span id="map-opacity-value"></span>
+                </div>
+                <input type="range" id="map-opacity-slider" min="${MAP_OPACITY_MIN}" max="100" step="5">
+                <div class="ds-hint">Lower it to make the tracks stand out.</div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    L.DomEvent.disableClickPropagation(dialog);
+    L.DomEvent.disableScrollPropagation(dialog);
+
+    const widthSlider = dialog.querySelector('#line-width-slider');
+    const widthValue = dialog.querySelector('#line-width-value');
+    const thinToggle = dialog.querySelector('#thin-lines-toggle');
+    const opacitySlider = dialog.querySelector('#map-opacity-slider');
+    const opacityValue = dialog.querySelector('#map-opacity-value');
+
+    widthSlider.value = String(displaySettings.lineWidth);
+    widthValue.textContent = `${displaySettings.lineWidth} px`;
+    thinToggle.checked = displaySettings.thinLines;
+    opacitySlider.value = String(displaySettings.mapOpacity);
+    opacityValue.textContent = `${displaySettings.mapOpacity} %`;
+
+    widthSlider.addEventListener('input', function() {
+        displaySettings.lineWidth = clampLineWidth(widthSlider.value);
+        widthValue.textContent = `${displaySettings.lineWidth} px`;
+        saveDisplaySettings();
+        applyTrackLines();
+    });
+    thinToggle.addEventListener('change', function() {
+        displaySettings.thinLines = thinToggle.checked;
+        saveDisplaySettings();
+        applyTrackLines();
+    });
+    opacitySlider.addEventListener('input', function() {
+        displaySettings.mapOpacity = clampMapOpacity(opacitySlider.value);
+        opacityValue.textContent = `${displaySettings.mapOpacity} %`;
+        saveDisplaySettings();
+        applyMapOpacity();
+    });
+    dialog.querySelector('#display-settings-close').onclick = function() {
+        setDisplaySettingsOpen(false);
+    };
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') setDisplaySettingsOpen(false);
+    });
+
+    // Tracks read displaySettings as they are drawn; the map fade applies now.
+    applyMapOpacity();
+}
+
+/* ============================================================================
  * Area selection: draw a rectangle to list + summarize the activities inside it.
  *
  * Design note: this deliberately iterates the polylines that are *currently
@@ -1383,7 +1655,6 @@ let tapSelectLatLng = null;        // L.LatLng of the tap whose nearby activitie
 let tapSelectTolerancePx = 0;      // pick radius used for that tap
 let selectionRefreshScheduled = false;
 
-const AREA_SELECT_NORMAL_STYLE = { weight: 2, opacity: 0.8 };
 const AREA_SELECT_HIGHLIGHT_STYLE = { color: '#00FF00', weight: 5, opacity: 1.0 };
 
 // A dashed rectangle with a cursor pointer in its lower-right corner. Distinct
@@ -1750,7 +2021,6 @@ function showSelectionDialog() {
     dialog.querySelectorAll('.area-sel-row').forEach(function(row) {
         const item = rowItems[parseInt(row.dataset.idx, 10)];
         if (!item || !item.polyline) return;
-        const baseStyle = Object.assign({ color: item.activity.color }, AREA_SELECT_NORMAL_STYLE);
         row.addEventListener('mouseenter', function() {
             row.style.background = 'rgba(0,124,186,0.10)';
             item.polyline.setStyle(AREA_SELECT_HIGHLIGHT_STYLE);
@@ -1762,9 +2032,9 @@ function showSelectionDialog() {
             // the highlight of a track whose popup the row click opened; that
             // popup's close resets the style instead.
             if (isPopupOpen(item.polyline)) {
-                item.polyline.once('popupclose', function() { this.setStyle(baseStyle); });
+                item.polyline.once('popupclose', function() { this.setStyle(trackStyle(item.activity)); });
             } else {
-                item.polyline.setStyle(baseStyle);
+                item.polyline.setStyle(trackStyle(item.activity));
                 raiseOpenPopupTrack();
             }
         });
@@ -1776,7 +2046,7 @@ function showSelectionDialog() {
             // as the rows are the only way to see which track is which. A rectangle
             // list always stays: it is closed with its own button.
             if (tapSelectLatLng && !isCoarsePointer(e)) {
-                item.polyline.once('popupclose', function() { this.setStyle(baseStyle); });
+                item.polyline.once('popupclose', function() { this.setStyle(trackStyle(item.activity)); });
                 clearSelection();
             }
         });

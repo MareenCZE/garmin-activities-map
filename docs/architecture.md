@@ -235,8 +235,18 @@ becomes a polyline in its category colour.
 
 - **Layout.** The top-left corner holds the date-range panel with the background and
   activity-type selectors below it. The top-right column holds a menu button, the
-  area-selection button and the zoom bar (`arrangeTopRightControls`); the menu button
-  hides and shows all the other controls.
+  area-selection button, the display-settings button and the zoom bar
+  (`arrangeTopRightControls`); the menu button hides and shows all the other controls.
+- **Display settings** (`initializeDisplaySettings`). The gear button opens a dialog
+  with three settings, all remembered in `localStorage` (`activitiesMap.displaySettings`).
+  *Line width* sets the track width, 1–5 px in 0.5 px steps (default 2 px, opacity 0.8).
+  *Thin, see-through lines* draws the tracks at 75 % of that width and 0.35 opacity, so
+  at the default width they are 1.5 px. Every place that restores a track after a
+  highlight calls `trackStyle(activity)`, so the settings hold after a hover or popup.
+  *Map opacity* (20–100 %) sets the opacity of Leaflet's `tilePane` over a white map
+  background. That fades every base layer but not the tracks, the Mapy.com logo or the
+  attribution. The dialog stays open while the map is used; the gear, its close
+  button, Escape or folding the controls closes it.
 - **Background and activity types** (`initializeLayerSelects`). A `<select>` picks the
   background map, and a multi-select dropdown with counts and All/None shortcuts picks
   the categories. Folium's layer control stays on the page, hidden; the two selectors

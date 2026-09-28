@@ -1,9 +1,10 @@
 """Headless-browser test for the map's control layout and the tiles/types dropdowns.
 
 The date panel heads the top-left stack, with the tiles select and the activity-types
-multiselect under it. The top-right column holds the hamburger, the area-select tool
-and the zoom bar; the hamburger folds everything but itself. The dropdowns replace Folium's layer control, which stays on
-the map hidden. Covers initializeLayerSelects and the layout in
+multiselect under it. The top-right column holds the hamburger, the area-select tool,
+the display-settings gear and the zoom bar; the hamburger folds everything but itself.
+The dropdowns replace Folium's layer control, which stays on the map hidden. Covers
+initializeLayerSelects, initializeDisplaySettings and the layout in
 templates/activity_loader_template.html.
 
 Opt-in: the module skips unless Playwright *and* a Chromium build are installed.
@@ -112,20 +113,24 @@ def test_layout_panels_left_buttons_right(page):
     selects = _box(page, "#map-layer-selects")
     hamburger = _box(page, ".leaflet-control-toggle-menu")
     area = _box(page, "#area-select-bar")
+    settings = _box(page, "#display-settings-bar")
     zoom = _box(page, ".leaflet-control-zoom")
 
     # Left column: date panel, then the dropdowns under it.
     assert slider["x"] == selects["x"] == 10
     assert slider["y"] + slider["height"] <= selects["y"]
 
-    # Right column, top to bottom: hamburger, area select, a gap, zoom.
+    # Right column, top to bottom: hamburger, area select, settings, a gap, zoom.
     right = page.locator(".leaflet-top.leaflet-right")
-    for selector in (".leaflet-control-toggle-menu", "#area-select-bar", ".leaflet-control-zoom"):
+    for selector in (".leaflet-control-toggle-menu", "#area-select-bar", "#display-settings-bar",
+                     ".leaflet-control-zoom"):
         assert right.locator(selector).count() == 1
-    assert hamburger["x"] + hamburger["width"] == area["x"] + area["width"] == zoom["x"] + zoom["width"]
+    assert (hamburger["x"] + hamburger["width"] == area["x"] + area["width"]
+            == settings["x"] + settings["width"] == zoom["x"] + zoom["width"])
     assert hamburger["x"] + hamburger["width"] > 1000
     assert hamburger["y"] + hamburger["height"] < area["y"]
-    assert area["y"] + area["height"] < zoom["y"]
+    assert area["y"] + area["height"] < settings["y"]
+    assert settings["y"] + settings["height"] < zoom["y"]
     # The date panel ends before the button column.
     assert slider["x"] + slider["width"] <= hamburger["x"]
 
@@ -135,7 +140,7 @@ def test_layout_panels_left_buttons_right(page):
 
 
 FOLDED = ("#date-range-slider-container", "#map-layer-selects", "#area-select-bar",
-          ".leaflet-control-zoom")
+          "#display-settings-bar", ".leaflet-control-zoom")
 
 
 def test_hamburger_folds_everything_but_itself(page):
@@ -192,6 +197,123 @@ def test_types_multiselect_toggles_categories(page):
     # A press on the map closes the menu.
     page.mouse.click(600, 600)
     assert not menu.is_visible()
+
+
+def _track_styles(page):
+    return page.evaluate(
+        "() => layerGroups['Running'].getLayers()"
+        ".map(l => [l.options.weight, l.options.opacity]).sort()")
+
+
+def test_settings_gear_opens_and_closes_dialog(page):
+    dialog = page.locator("#display-settings-dialog")
+    assert not dialog.is_visible()
+
+    page.click(".leaflet-control-display-settings")
+    assert dialog.is_visible()
+    # Level with the gear, left of the button column.
+    gear = _box(page, ".leaflet-control-display-settings")
+    box = _box(page, "#display-settings-dialog")
+    assert box["y"] == gear["y"]
+    assert box["x"] + box["width"] <= gear["x"]
+    # It stays open while the map is used.
+    page.mouse.click(400, 500)
+    assert dialog.is_visible()
+
+    page.click("#display-settings-close")
+    assert not dialog.is_visible()
+    page.click(".leaflet-control-display-settings")
+    page.keyboard.press("Escape")
+    assert not dialog.is_visible()
+
+    # Folding the controls closes it too.
+    page.click(".leaflet-control-display-settings")
+    page.click(".leaflet-control-toggle-menu")
+    assert not dialog.is_visible()
+
+
+def test_thin_lines_restyle_tracks_and_are_remembered(page):
+    assert _track_styles(page) == [[2, 0.8], [2, 0.8]]
+
+    page.click(".leaflet-control-display-settings")
+    page.check("#thin-lines-toggle")
+    assert _track_styles(page) == [[1.5, 0.35], [1.5, 0.35]]
+
+    # A track's hover highlight falls back to the thin style.
+    page.evaluate("() => { const l = layerGroups['Running'].getLayers()[0];"
+                  " l.fire('mouseover'); l.fire('mouseout'); }")
+    assert _track_styles(page) == [[1.5, 0.35], [1.5, 0.35]]
+
+    # Kept across a reload, and applied to the tracks drawn on load.
+    page.reload()
+    page.wait_for_function("() => (activityData['Running'] || []).length === 2", timeout=20000)
+    assert _track_styles(page) == [[1.5, 0.35], [1.5, 0.35]]
+    page.click(".leaflet-control-display-settings")
+    assert page.is_checked("#thin-lines-toggle")
+
+    page.uncheck("#thin-lines-toggle")
+    assert _track_styles(page) == [[2, 0.8], [2, 0.8]]
+
+
+def test_line_width_slider_sets_width_and_combines_with_thin_lines(page):
+    page.click(".leaflet-control-display-settings")
+    assert page.input_value("#line-width-slider") == "2"
+    assert page.inner_text("#line-width-value") == "2 px"
+
+    page.fill("#line-width-slider", "4")
+    assert _track_styles(page) == [[4, 0.8], [4, 0.8]]
+    assert page.inner_text("#line-width-value") == "4 px"
+
+    # Thin lines take a share of the chosen width.
+    page.check("#thin-lines-toggle")
+    assert _track_styles(page) == [[3, 0.35], [3, 0.35]]
+
+    page.reload()
+    page.wait_for_function("() => (activityData['Running'] || []).length === 2", timeout=20000)
+    assert _track_styles(page) == [[3, 0.35], [3, 0.35]]
+    page.click(".leaflet-control-display-settings")
+    assert page.input_value("#line-width-slider") == "4"
+
+
+def test_out_of_range_saved_settings_are_clamped(page):
+    page.evaluate("() => localStorage.setItem('activitiesMap.displaySettings',"
+                  " JSON.stringify({lineWidth: 40, mapOpacity: 1}))")
+    page.reload()
+    page.wait_for_function("() => (activityData['Running'] || []).length === 2", timeout=20000)
+    assert _track_styles(page) == [[5, 0.8], [5, 0.8]]
+    assert _tile_pane_opacity(page) == "0.2"
+
+
+def _tile_pane_opacity(page):
+    return page.evaluate("() => mapInstance.getPane('tilePane').style.opacity")
+
+
+def test_map_opacity_slider_fades_base_map_and_is_remembered(page):
+    assert _tile_pane_opacity(page) == ""
+    page.click(".leaflet-control-display-settings")
+    assert page.input_value("#map-opacity-slider") == "100"
+
+    page.fill("#map-opacity-slider", "40")
+    assert _tile_pane_opacity(page) == "0.4"
+    assert page.inner_text("#map-opacity-value") == "40 %"
+    # The tracks themselves are not faded.
+    assert _track_styles(page) == [[2, 0.8], [2, 0.8]]
+
+    page.reload()
+    page.wait_for_function("() => !!document.getElementById('display-settings-dialog')", timeout=20000)
+    assert _tile_pane_opacity(page) == "0.4"
+
+    page.click(".leaflet-control-display-settings")
+    page.fill("#map-opacity-slider", "100")
+    assert _tile_pane_opacity(page) == ""
+
+
+def test_corrupt_saved_settings_fall_back_to_defaults(page):
+    page.evaluate("() => localStorage.setItem('activitiesMap.displaySettings', '{not json')")
+    page.reload()
+    page.wait_for_function("() => (activityData['Running'] || []).length === 2", timeout=20000)
+    assert _track_styles(page) == [[2, 0.8], [2, 0.8]]
+    assert _tile_pane_opacity(page) == ""
 
 
 def test_single_base_layer_hides_tile_select(config, tmp_path):
