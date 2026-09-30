@@ -216,7 +216,8 @@ The manifest lists, per category, its data file, activity count, colour and
 
 The providers' terms require their attribution to stay visible. The Leaflet
 attribution control is therefore always enabled, and the attribution strings and the
-Mapy.com logo must not be removed.
+Mapy.com logo must not be removed. A saved image (see "Saving the selection as an
+image") carries them too.
 
 ## Client-side behaviour
 
@@ -329,6 +330,35 @@ the rectangle, and per-row highlight, popup and Garmin Connect links. Opening a 
 from a row does not move the map. The selection is computed from the polylines currently
 on the map, so it follows the date and category filters, and it is recalculated
 (debounced) whenever they change while the rectangle is shown.
+
+### Saving the selection as an image
+
+The rectangle's dialog ends with a "Save image" footer (`imageExportSectionHtml`,
+`saveMapImage`). A page cannot screenshot itself, so the rectangle is drawn again on a
+canvas at a chosen zoom from the current one up to the base map's `maxNativeZoom`
+(`imageExportChoices`). The list stops at the first zoom that is too large, which is
+shown disabled: more than `IMAGE_EXPORT_MAX_TILES` (400) tiles, a side over 16384 px, or
+over 50 (touch devices: 16) megapixels. It is drawn in the map's order:
+
+1. The container background, then the active base layer's tiles for that zoom
+   (`exportTileUrl` follows `L.TileLayer.getTileUrl`) at the *Map opacity*. Tiles are
+   loaded with `crossOrigin = 'anonymous'` so the canvas stays readable: OSM and CARTO
+   send `Access-Control-Allow-Origin: *`, Mapy.com echoes the page's origin (with
+   `Vary: Origin`, so tiles cached for the map are not reused without it). A tile from
+   a server without CORS fails like one that does not load; failed tiles stay blank and
+   are counted in the status line, and the image is not saved when all fail.
+2. The tracks from `collectVisibleActivities` (so the date and type filters apply), in
+   their SVG paint order and with their current `options`, i.e. display settings and
+   highlight. The tracks are taken when the button is pressed.
+3. For highlighted tracks: chevrons (`directionChevronArms`, shared with
+   `buildDirectionChevrons`) and start/finish markers (`trackEnds`, drawn on the canvas
+   to match the CSS markers).
+4. The base layer's attribution as text in the lower-right corner, and the Mapy.com logo
+   above it on Mapy.com tiles, as their terms require.
+
+Lines, markers and attribution keep their screen size unless *Enlarge lines with the
+image* is ticked; then they are scaled by the zoom factor (the attribution only to about
+its share of a screen-sized map). The PNG is downloaded through an object URL.
 
 ### Mapy.com logo
 

@@ -828,9 +828,8 @@ function trackEndMarker(latlng, kind) {
     });
 }
 
-/** The track as screen segments: ends, unit direction, and where each starts along it. */
-function screenSegments(polyline) {
-    const points = polyline.getLatLngs().map(ll => mapInstance.latLngToLayerPoint(ll));
+/** A track as pixel segments: ends, unit direction, and where each starts along it. */
+function pixelSegments(points) {
     const segments = [];
     let run = 0;
     for (let i = 1; i < points.length; i++) {
@@ -844,34 +843,60 @@ function screenSegments(polyline) {
 }
 
 /**
- * Chevrons every DIRECTION_CHEVRON_SPACING screen pixels along the track, drawn
- * as short lines so they sit exactly on it. Repeats of the same direction (laps)
- * are dropped. Placed in layer-point space, so they are rebuilt after each zoom.
+ * Chevrons every DIRECTION_CHEVRON_SPACING pixels along a track given as pixel
+ * points, each as its three corners [arm end, tip, arm end]. Repeats of the same
+ * direction (laps) are dropped. `scale` enlarges them for a saved image
+ * (saveMapImage) drawn with enlarged lines.
  */
-function buildDirectionChevrons(polyline, group) {
-    group.clearLayers();
-    const segments = screenSegments(polyline);
+function directionChevronArms(points, scale = 1) {
+    const spacing = DIRECTION_CHEVRON_SPACING * scale;
+    const length = DIRECTION_CHEVRON_LENGTH * scale;
+    const halfWidth = DIRECTION_CHEVRON_HALF_WIDTH * scale;
     const placed = [];
+    const chevrons = [];
     let i = 0;
-    for (const s of segments) {
+    for (const s of pixelSegments(points)) {
         const end = s.start + s.len;
-        for (; i * DIRECTION_CHEVRON_SPACING + DIRECTION_CHEVRON_SPACING / 2 <= end; i++) {
-            const at = i * DIRECTION_CHEVRON_SPACING + DIRECTION_CHEVRON_SPACING / 2;
-            const t = at - s.start;
+        for (; i * spacing + spacing / 2 <= end; i++) {
+            const t = i * spacing + spacing / 2 - s.start;
             const p = L.point(s.a.x + s.dx * t, s.a.y + s.dy * t);
             const repeat = placed.some(c => c.dx * s.dx + c.dy * s.dy > 0.5 &&
-                                            c.p.distanceTo(p) < DIRECTION_REPEAT_PX);
+                                            c.p.distanceTo(p) < DIRECTION_REPEAT_PX * scale);
             if (repeat) continue;
             placed.push({ p, dx: s.dx, dy: s.dy });
 
-            const tip = L.point(p.x + s.dx * DIRECTION_CHEVRON_LENGTH, p.y + s.dy * DIRECTION_CHEVRON_LENGTH);
-            const back = L.point(p.x - s.dx * DIRECTION_CHEVRON_LENGTH, p.y - s.dy * DIRECTION_CHEVRON_LENGTH);
-            const nx = -s.dy * DIRECTION_CHEVRON_HALF_WIDTH, ny = s.dx * DIRECTION_CHEVRON_HALF_WIDTH;
-            const arms = [L.point(back.x + nx, back.y + ny), tip, L.point(back.x - nx, back.y - ny)];
-            group.addLayer(L.polyline(arms.map(q => mapInstance.layerPointToLatLng(q)),
-                Object.assign({ interactive: false, renderer: getDirectionRenderer() }, DIRECTION_CHEVRON_STYLE)));
+            const tip = L.point(p.x + s.dx * length, p.y + s.dy * length);
+            const back = L.point(p.x - s.dx * length, p.y - s.dy * length);
+            const nx = -s.dy * halfWidth, ny = s.dx * halfWidth;
+            chevrons.push([L.point(back.x + nx, back.y + ny), tip, L.point(back.x - nx, back.y - ny)]);
         }
     }
+    return chevrons;
+}
+
+/**
+ * The chevrons of a highlighted track, drawn as short lines so they sit exactly
+ * on it. Placed in layer-point space, so they are rebuilt after each zoom.
+ */
+function buildDirectionChevrons(polyline, group) {
+    group.clearLayers();
+    const points = polyline.getLatLngs().map(ll => mapInstance.latLngToLayerPoint(ll));
+    for (const arms of directionChevronArms(points)) {
+        group.addLayer(L.polyline(arms.map(q => mapInstance.layerPointToLatLng(q)),
+            Object.assign({ interactive: false, renderer: getDirectionRenderer() }, DIRECTION_CHEVRON_STYLE)));
+    }
+}
+
+/**
+ * Where a track's end markers go, bottom one first: one split marker when start
+ * and finish (nearly) meet, else the finish under the start.
+ */
+function trackEnds(latlngs) {
+    const start = latlngs[0], finish = latlngs[latlngs.length - 1];
+    if (mapInstance.distance(start, finish) <= DIRECTION_LOOP_MAX_GAP) {
+        return [{ latlng: start, kind: 'loop' }];
+    }
+    return [{ latlng: finish, kind: 'finish' }, { latlng: start, kind: 'start' }];
 }
 
 function showTrackDirection(polyline) {
@@ -885,13 +910,7 @@ function showTrackDirection(polyline) {
     chevrons.addTo(mapInstance);
 
     const markers = L.layerGroup();
-    const start = latlngs[0], finish = latlngs[latlngs.length - 1];
-    if (mapInstance.distance(start, finish) <= DIRECTION_LOOP_MAX_GAP) {
-        markers.addLayer(trackEndMarker(start, 'loop'));
-    } else {
-        markers.addLayer(trackEndMarker(finish, 'finish'));
-        markers.addLayer(trackEndMarker(start, 'start'));
-    }
+    trackEnds(latlngs).forEach(end => markers.addLayer(trackEndMarker(end.latlng, end.kind)));
     markers.addTo(mapInstance);
 
     trackDirections.set(polyline, { chevrons, markers });
@@ -2024,6 +2043,7 @@ function onAreaSelectPointerUp(e) {
     }
 
     areaSelectBounds = bounds;
+    imageExportStatus = '';
     showSelectionDialog();
 }
 
@@ -2199,12 +2219,14 @@ function showSelectionDialog() {
         <div style="overflow-y:auto;">
             ${selection.length ? listRows : emptyMsg}
         </div>
+        ${isArea ? imageExportSectionHtml() : ''}
     `;
     document.body.appendChild(dialog);
     L.DomEvent.disableClickPropagation(dialog);
     L.DomEvent.disableScrollPropagation(dialog);
 
     dialog.querySelector('#area-sel-close').onclick = clearSelection;
+    wireImageExportControls();
 
     dialog.querySelectorAll('input[name="area-sel-mode"]').forEach(function(input) {
         input.onchange = function() {
@@ -2247,6 +2269,454 @@ function showSelectionDialog() {
             }
         });
     });
+}
+
+/* ============================================================================
+ * Save the selected rectangle as an image, with more detail than the screen.
+ *
+ * A page cannot screenshot itself, so the image is drawn anew on a canvas at a
+ * higher zoom level: the active base map's tiles for that zoom, then the visible
+ * tracks (already date- and type-filtered, see collectVisibleActivities) in their
+ * current style, the direction of highlighted tracks, and the tile attribution
+ * the providers' terms require (plus the Mapy.com logo on Mapy.com tiles).
+ *
+ * Reading the tiles' pixels needs CORS: OpenStreetMap and CARTO allow any site,
+ * Mapy.com echoes the page's origin. A provider that doesn't fails the tile.
+ * ========================================================================== */
+// The same tile server policies apply as to browsing: OpenStreetMap forbids bulk
+// downloading and Mapy.com bills each tile, so one image stays small.
+const IMAGE_EXPORT_MAX_TILES = 400;
+// Canvas limits: iOS Safari gives up around 16.7 megapixels; desktop browsers go
+// further but encoding the PNG gets slow.
+const IMAGE_EXPORT_MAX_SIDE = 16384;
+const IMAGE_EXPORT_TILE_TIMEOUT_MS = 20000;
+const IMAGE_EXPORT_PARALLEL_TILES = 6;
+const MAPY_LOGO_URL = 'https://api.mapy.com/img/api/logo.svg';
+
+let imageExportZoom = null;         // chosen zoom level, kept while the dialog is rebuilt
+let imageExportScaleLines = false;  // "enlarge lines with the image"
+let imageExportRunning = false;
+let imageExportStatus = '';
+
+function imageExportMaxPixels() {
+    return window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? 16e6 : 50e6;
+}
+
+/** The base map shown now, or null. */
+function activeBaseLayer() {
+    return Object.values(baseLayers).find(layer => mapInstance.hasLayer(layer)) || null;
+}
+
+/** Highest zoom the base map has real tiles for. */
+function baseLayerMaxZoom(layer) {
+    const o = layer.options;
+    if (o.maxNativeZoom != null) return o.maxNativeZoom;
+    return o.maxZoom != null ? o.maxZoom : mapInstance.getMaxZoom();
+}
+
+/** Pixel size and tile range of the rectangle drawn at zoom z. */
+function imageExportPlan(bounds, layer, z) {
+    const nw = mapInstance.project(bounds.getNorthWest(), z).round();
+    const se = mapInstance.project(bounds.getSouthEast(), z).round();
+    const tileSize = layer.getTileSize();
+    const min = L.point(Math.floor(nw.x / tileSize.x), Math.floor(nw.y / tileSize.y));
+    const max = L.point(Math.ceil(se.x / tileSize.x) - 1, Math.ceil(se.y / tileSize.y) - 1);
+    return {
+        z, origin: nw, tileSize, min, max,
+        width: se.x - nw.x,
+        height: se.y - nw.y,
+        tiles: (max.x - min.x + 1) * (max.y - min.y + 1),
+    };
+}
+
+function imageExportPlanFits(plan) {
+    return plan.tiles <= IMAGE_EXPORT_MAX_TILES &&
+        plan.width <= IMAGE_EXPORT_MAX_SIDE && plan.height <= IMAGE_EXPORT_MAX_SIDE &&
+        plan.width * plan.height <= imageExportMaxPixels();
+}
+
+/**
+ * The zoom levels offered, from the map's current zoom up to the base map's
+ * last one, as far as they fit the limits. The first one that doesn't fit is
+ * listed too (disabled), so it is clear why the list ends.
+ */
+function imageExportChoices(bounds, layer) {
+    const current = Math.round(mapInstance.getZoom());
+    const choices = [];
+    for (let z = current; z <= baseLayerMaxZoom(layer); z++) {
+        const plan = imageExportPlan(bounds, layer, z);
+        const fits = imageExportPlanFits(plan);
+        choices.push({ plan, fits, factor: Math.pow(2, z - current) });
+        if (!fits) break;
+    }
+    return choices;
+}
+
+/** The URL of one tile, as L.TileLayer.getTileUrl builds it (without retina). */
+function exportTileUrl(layer, x, y, z) {
+    const o = layer.options;
+    const n = Math.pow(2, z);
+    const wrappedX = ((x % n) + n) % n;
+    const subdomains = typeof o.subdomains === 'string' ? o.subdomains.split('') : (o.subdomains || []);
+    const data = {
+        r: '',
+        s: subdomains.length ? subdomains[Math.abs(wrappedX + y) % subdomains.length] : '',
+        x: wrappedX,
+        y: o.tms ? n - 1 - y : y,
+        z: (o.zoomReverse ? o.maxZoom - z : z) + (o.zoomOffset || 0),
+    };
+    return L.Util.template(layer._url, L.Util.extend(data, o));
+}
+
+/** An image loaded for reading its pixels, or null when it fails or times out. */
+function loadCorsImage(url) {
+    return new Promise(function(resolve) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        const timer = setTimeout(function() { img.src = ''; resolve(null); }, IMAGE_EXPORT_TILE_TIMEOUT_MS);
+        img.onload = function() { clearTimeout(timer); resolve(img); };
+        img.onerror = function() { clearTimeout(timer); resolve(null); };
+        img.src = url;
+    });
+}
+
+/** Draws the tiles; returns how many failed. */
+async function drawExportTiles(ctx, layer, plan, onProgress) {
+    const jobs = [];
+    for (let y = plan.min.y; y <= plan.max.y; y++) {
+        for (let x = plan.min.x; x <= plan.max.x; x++) jobs.push({ x, y });
+    }
+    let done = 0, failed = 0, next = 0;
+    ctx.globalAlpha = displaySettings.mapOpacity / 100;
+    async function worker() {
+        while (next < jobs.length) {
+            const job = jobs[next++];
+            const img = await loadCorsImage(exportTileUrl(layer, job.x, job.y, plan.z));
+            if (img) {
+                ctx.drawImage(img, job.x * plan.tileSize.x - plan.origin.x, job.y * plan.tileSize.y - plan.origin.y,
+                              plan.tileSize.x, plan.tileSize.y);
+            } else {
+                failed++;
+            }
+            onProgress(++done, jobs.length);
+        }
+    }
+    await Promise.all(Array.from({ length: IMAGE_EXPORT_PARALLEL_TILES }, worker));
+    ctx.globalAlpha = 1;
+    return failed;
+}
+
+/** Strokes a line through pixel points in a Leaflet path style. */
+function strokeExportLine(ctx, points, style, lineScale) {
+    if (points.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.strokeStyle = style.color;
+    ctx.globalAlpha = style.opacity != null ? style.opacity : 1;
+    ctx.lineWidth = style.weight * lineScale;
+    ctx.lineCap = style.lineCap || 'round';
+    ctx.lineJoin = style.lineJoin || 'round';
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+}
+
+/** The chequered flag fill of the finish markers, 3 px squares (6 px pattern). */
+function fillChequer(ctx, x, y, size, scale) {
+    const cell = 3 * scale;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x, y, size, size);
+    ctx.fillStyle = '#222';
+    const cells = Math.ceil(size / cell) + 1;
+    for (let i = 0; i < cells; i++) {
+        for (let j = 0; j < cells; j++) {
+            if ((i + j) % 2 === 0) ctx.fillRect(x + i * cell, y + j * cell, cell, cell);
+        }
+    }
+}
+
+/** A start, finish or loop marker like trackEndMarker's CSS, centred on p. */
+function drawExportTrackEnd(ctx, p, kind, scale) {
+    const size = (kind === 'loop' ? 24 : 22) * scale;
+    const r = size / 2;
+    const left = p.x - r, top = p.y - r;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+    ctx.shadowBlur = 3 * scale;
+    ctx.shadowOffsetY = 1 * scale;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, 2 * Math.PI);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.restore();
+
+    const border = 2.5 * scale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r - border, 0, 2 * Math.PI);
+    ctx.clip();
+    if (kind === 'start') {
+        ctx.fillStyle = '#1a9d49';
+        ctx.fillRect(left, top, size, size);
+    } else {
+        fillChequer(ctx, left, top, size, scale);
+        if (kind === 'loop') {
+            ctx.fillStyle = '#1a9d49';
+            ctx.fillRect(left, top, r, size);
+        }
+    }
+    ctx.restore();
+    if (kind === 'finish') {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r - border / 2, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = border;
+        ctx.stroke();
+    }
+    if (kind !== 'finish') {
+        // The 9 px play triangle (TRACK_END_PLAY): centred on a start, at the left of a loop.
+        const unit = 0.9 * scale;
+        const x0 = kind === 'loop' ? left + border + 3 * scale : p.x - 4.5 * unit;
+        const y0 = p.y - 4.5 * unit;
+        ctx.beginPath();
+        ctx.moveTo(x0 + 2 * unit, y0 + 1 * unit);
+        ctx.lineTo(x0 + 9 * unit, y0 + 5 * unit);
+        ctx.lineTo(x0 + 2 * unit, y0 + 9 * unit);
+        ctx.closePath();
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+    }
+}
+
+/**
+ * The visible tracks in the order they are painted on screen (a highlighted
+ * track is brought to the front), with the style they have now.
+ */
+function exportTracks(bounds) {
+    const tracks = collectVisibleActivities()
+        .map(item => item.polyline)
+        .filter(polyline => polyline.getBounds().intersects(bounds));
+    tracks.sort(function(a, b) {
+        if (!a._path || !b._path) return 0;
+        return a._path.compareDocumentPosition(b._path) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    });
+    return tracks.map(polyline => ({
+        latlngs: L.LineUtil.isFlat(polyline.getLatLngs()) ? polyline.getLatLngs() : polyline.getLatLngs().flat(),
+        style: Object.assign({}, polyline.options),
+        direction: trackDirections.has(polyline),
+    }));
+}
+
+function drawExportTracks(ctx, tracks, plan, lineScale) {
+    const toPixels = latlngs => latlngs.map(ll => mapInstance.project(ll, plan.z).subtract(plan.origin));
+    const withDirection = [];
+    tracks.forEach(function(track) {
+        const points = toPixels(track.latlngs);
+        strokeExportLine(ctx, points, track.style, lineScale);
+        if (track.direction && points.length >= 2) withDirection.push({ track, points });
+    });
+    // Chevrons over all tracks, markers over the chevrons, as on the map's panes.
+    withDirection.forEach(function(d) {
+        directionChevronArms(d.points, lineScale)
+            .forEach(arms => strokeExportLine(ctx, arms, DIRECTION_CHEVRON_STYLE, lineScale));
+    });
+    withDirection.forEach(function(d) {
+        trackEnds(d.track.latlngs).forEach(function(end) {
+            drawExportTrackEnd(ctx, mapInstance.project(end.latlng, plan.z).subtract(plan.origin), end.kind, lineScale);
+        });
+    });
+}
+
+/** The base map's attribution in the lower right, with the Mapy.com logo above it. */
+async function drawExportAttribution(ctx, layer, width, height, scale) {
+    const html = layer.getAttribution ? layer.getAttribution() : '';
+    const holder = document.createElement('div');
+    holder.innerHTML = html || '';
+    const text = holder.textContent.trim();
+    let bottom = height;
+    if (text) {
+        let fontSize = 11 * scale;
+        const pad = 4 * scale;
+        ctx.font = `${fontSize}px Arial, sans-serif`;
+        // Too wide for a narrow image: shrink it rather than cut the credit off.
+        while (fontSize > 6 && ctx.measureText(text).width + 2 * pad > width) {
+            fontSize -= 0.5;
+            ctx.font = `${fontSize}px Arial, sans-serif`;
+        }
+        const boxWidth = ctx.measureText(text).width + 2 * pad;
+        const boxHeight = fontSize + 2 * pad;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.fillRect(width - boxWidth, height - boxHeight, boxWidth, boxHeight);
+        ctx.fillStyle = '#333';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, width - boxWidth + pad, height - boxHeight / 2);
+        bottom -= boxHeight;
+    }
+    if (typeof layer._url === 'string' && layer._url.indexOf('api.mapy.c') !== -1) {
+        // Mapy.com's terms: their logo at least 30 px high (initializeMapyAttribution).
+        const logo = await loadCorsImage(MAPY_LOGO_URL);
+        const logoHeight = 30 * scale;
+        const pad = 4 * scale;
+        const logoWidth = logo ? logoHeight * (logo.naturalWidth / logo.naturalHeight || 100 / 30) : 0;
+        if (logo) {
+            const x = width - logoWidth - 3 * pad, y = bottom - logoHeight - 3 * pad;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.fillRect(x, y, logoWidth + 2 * pad, logoHeight + 2 * pad);
+            ctx.drawImage(logo, x + pad, y + pad, logoWidth, logoHeight);
+        }
+    }
+}
+
+function setImageExportStatus(text) {
+    imageExportStatus = text;
+    const el = document.getElementById('image-export-status');
+    if (el) el.textContent = text;
+}
+
+function canvasToBlob(canvas) {
+    return new Promise(function(resolve, reject) {
+        try {
+            canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('empty image')), 'image/png');
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
+/**
+ * Draws the rectangle at zoom z and hands it to the browser as a PNG download.
+ * The tracks are taken when the button is pressed, so changing the filters
+ * while the tiles load doesn't mix two states in one image.
+ */
+async function saveMapImage(bounds, z) {
+    const layer = activeBaseLayer();
+    if (!layer || imageExportRunning) return;
+    const plan = imageExportPlan(bounds, layer, z);
+    if (!imageExportPlanFits(plan) || plan.width < 1 || plan.height < 1) return;
+
+    // Lines, markers and the attribution keep their screen size, like zooming in,
+    // unless "enlarge lines" makes the image an enlargement of the screen.
+    const lineScale = imageExportScaleLines ? Math.max(1, Math.pow(2, z - mapInstance.getZoom())) : 1;
+    const tracks = exportTracks(bounds);
+    const background = getComputedStyle(mapInstance.getContainer()).backgroundColor || '#ddd';
+
+    imageExportRunning = true;
+    updateImageExportControls();
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = plan.width;
+        canvas.height = plan.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('the browser could not create an image this large');
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, plan.width, plan.height);
+
+        const failed = await drawExportTiles(ctx, layer, plan, function(done, total) {
+            setImageExportStatus(`Downloading map tiles ${done} / ${total}…`);
+        });
+        if (failed === plan.tiles) {
+            throw new Error('the map tiles could not be loaded (the tile server may not allow saving them)');
+        }
+        setImageExportStatus('Drawing…');
+        drawExportTracks(ctx, tracks, plan, lineScale);
+        // Enlarged with the lines, but only to about its share of a screen-sized map.
+        const attributionScale = Math.min(lineScale, Math.max(1, Math.min(plan.width, plan.height) / 800));
+        await drawExportAttribution(ctx, layer, plan.width, plan.height, attributionScale);
+
+        const blob = await canvasToBlob(canvas);
+        const fileName = `activities-map-${dayToIsoDate(Math.floor(Date.now() / DAY_MS))}-z${z}.png`;
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+        setImageExportStatus(failed
+            ? `Saved ${fileName}, but ${failed} map tile${failed === 1 ? '' : 's'} could not be loaded and ${failed === 1 ? 'is' : 'are'} blank.`
+            : `Saved ${fileName} (${plan.width} × ${plan.height} px).`);
+    } catch (e) {
+        console.error('Saving the map image failed:', e);
+        setImageExportStatus(`Could not save the image: ${e.message}`);
+    } finally {
+        imageExportRunning = false;
+        updateImageExportControls();
+    }
+}
+
+/** The "Save image" footer of a rectangle's selection dialog. */
+function imageExportSectionHtml() {
+    return `
+        <div id="image-export" style="padding:8px 10px;border-top:1px solid rgba(0,0,0,0.1);display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;gap:6px;align-items:center;">
+                <select id="image-export-zoom" title="Detail of the saved image" style="flex:1;min-width:0;font-size:12px;"></select>
+                <button id="image-export-save" type="button" style="font-size:12px;cursor:pointer;">Save image</button>
+            </div>
+            <label style="cursor:pointer;"><input type="checkbox" id="image-export-scale-lines"> Enlarge lines with the image</label>
+            <div id="image-export-status" style="color:#666;"></div>
+        </div>`;
+}
+
+/** Fills the zoom choices for the current rectangle, base map and zoom, and the status line. */
+function updateImageExportControls() {
+    const select = document.getElementById('image-export-zoom');
+    const button = document.getElementById('image-export-save');
+    const scaleLines = document.getElementById('image-export-scale-lines');
+    if (!select || !button || !areaSelectBounds) return;
+    const layer = activeBaseLayer();
+    const choices = layer ? imageExportChoices(areaSelectBounds, layer) : [];
+    const usable = choices.filter(c => c.fits);
+    if (!usable.some(c => c.plan.z === imageExportZoom)) {
+        // Default: the most detail that fits, but no more than 4x the screen.
+        const preferred = usable.filter(c => c.factor <= 4);
+        imageExportZoom = preferred.length ? preferred[preferred.length - 1].plan.z : null;
+    }
+    select.innerHTML = choices.map(function(c) {
+        const label = c.factor === 1 ? 'As on screen' : `${c.factor}× detail`;
+        const size = c.fits ? `${c.plan.width} × ${c.plan.height} px` : 'too large';
+        return `<option value="${c.plan.z}" ${c.fits ? '' : 'disabled'} ${c.plan.z === imageExportZoom ? 'selected' : ''}>` +
+            `${label} · ${size}</option>`;
+    }).join('');
+    scaleLines.checked = imageExportScaleLines;
+    button.disabled = imageExportRunning || imageExportZoom == null;
+    select.disabled = imageExportRunning;
+
+    if (imageExportRunning) {
+        setImageExportStatus(imageExportStatus);
+    } else if (!layer) {
+        setImageExportStatus('No base map is shown.');
+    } else if (imageExportZoom == null) {
+        setImageExportStatus('The rectangle is too large to save. Draw a smaller one or zoom out.');
+    } else if (!imageExportStatus) {
+        const chosen = usable.find(c => c.plan.z === imageExportZoom);
+        setImageExportStatus(`${chosen.plan.tiles} map tile${chosen.plan.tiles === 1 ? '' : 's'} to download (zoom ${chosen.plan.z}).`);
+    } else {
+        setImageExportStatus(imageExportStatus);
+    }
+}
+
+function wireImageExportControls() {
+    const select = document.getElementById('image-export-zoom');
+    if (!select) return;
+    select.onchange = function() {
+        imageExportZoom = parseInt(select.value, 10);
+        imageExportStatus = '';
+        updateImageExportControls();
+    };
+    document.getElementById('image-export-scale-lines').onchange = function() {
+        imageExportScaleLines = this.checked;
+    };
+    document.getElementById('image-export-save').onclick = function() {
+        if (areaSelectBounds && imageExportZoom != null) saveMapImage(areaSelectBounds, imageExportZoom);
+    };
+    updateImageExportControls();
+}
+
+/** A new rectangle, zoom or base map changes what can be saved. */
+function resetImageExportStatus() {
+    if (imageExportRunning) return;
+    imageExportStatus = '';
+    updateImageExportControls();
 }
 
 function initializeAreaSelection() {
@@ -2296,6 +2766,7 @@ function initializeAreaSelection() {
     // Not passive, so preventDefault can stop the browser's own scrolling.
     mapEl.addEventListener('touchstart', onAreaSelectTouch, { passive: false });
     mapEl.addEventListener('touchmove', onAreaSelectTouch, { passive: false });
+    mapInstance.on('zoomend baselayerchange', resetImageExportStatus);
 }
 
 /* ============================================================================

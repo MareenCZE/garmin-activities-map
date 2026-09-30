@@ -80,6 +80,25 @@ can be turned off with `enable-area-selection = false` under `[activities]`.
 
 ![Area selection with totals](images/area-selection.png)
 
+### Saving an image
+
+The bottom of the area-selection dialog saves the rectangle as a PNG with more detail
+than the screen shows. It is drawn again at a higher zoom, as if you zoomed in, took
+several screenshots and joined them. Choose the detail (2×, 4×, … up to the map's
+highest zoom) and press **Save image**. The image shows what the map shows now: the
+background map, the date and type filters, the display settings and any highlighted
+track with its direction. It also carries the map provider's credit, which their terms
+require.
+
+- Lines and markers keep their screen width, so they look thinner at more detail. Tick
+  **Enlarge lines with the image** to get an enlargement of the screen instead.
+- The map tiles are downloaded again at the chosen zoom, at most 400 per image. Mapy.com
+  counts them against your API key's quota like any other tiles.
+- Tracks are stored simplified (`coords-simplification-factor`), so from about zoom 15
+  they show straight segments while the background map keeps getting sharper.
+- The image size is limited to 50 megapixels (16 on phones and tablets); larger
+  choices are shown as "too large".
+
 ### Display settings
 
 The gear button under the area-selection button opens the display settings. Use them
@@ -334,7 +353,5 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
 
 - **Replace `garth`.** The Garmin Connect login uses `garth` (through
   `garminconnect`), which is being retired, so login needs to move to its successor.
-- **Built-in screenshots.** Add a feature to the application that captures screenshots
-  of the generated map, e.g. for this README.
 - **Installer.** Replace the manual installation steps in this README (venv,
   `pip install`, first configuration) with an installer script.
