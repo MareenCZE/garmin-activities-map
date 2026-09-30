@@ -55,13 +55,15 @@ python -m pytest tests/test_browser_*.py
 - `test_browser_mapy.py` — headless-Chromium check of the Mapy.com logo toggle
   (opt-in; see above)
 - `test_browser_area_select.py`, `test_browser_tap_select.py` — headless-Chromium
-  checks of the rectangle selection tool and the click/tap picker (touch and mouse
-  tolerance, overlapping-track list); opt-in like the one above
+  checks of the rectangle selection tool (drawing and resizing, by mouse and touch)
+  and the click/tap picker (touch and mouse tolerance, overlapping-track list); opt-in
+  like the one above
 - `test_browser_direction.py` — headless-Chromium check of the direction chevrons and
   start/finish markers on a highlighted track; opt-in like the one above
-- `test_browser_image_export.py` — headless-Chromium check of saving a rectangle as
-  an image with faked tiles: size and zoom, filtered tracks, zoom choices, failed
-  tiles; opt-in like the one above
+- `test_browser_image_export.py` — headless-Chromium check of saving an image with
+  faked tiles: size and zoom, filtered tracks, zoom choices, failed tiles, presets
+  (fixed area, zoom, types, dates, line width and map opacity, too-detailed zoom),
+  transparent background and "Copy as preset"; opt-in like the one above
 - `test_browser_controls.py` — headless-Chromium check of the control layout
   (date panel, tiles/types dropdowns, zoom bar, top-right hamburger) and of the
   tiles select and activity-types multiselect; opt-in like the one above

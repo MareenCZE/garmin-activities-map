@@ -639,6 +639,7 @@ async function loadManifest() {
         initializeMapyAttribution();
         initializeAreaSelection();
         initializeDisplaySettings();
+        initializeImageExport();
         initializeTapSelection();
         arrangeTopRightControls();
 
@@ -736,10 +737,9 @@ let displaySettings = loadDisplaySettings();
 /**
  * A track's resting style. Width and opacity follow the "line width" and "thin
  * lines" display settings, so it is looked up on every restore rather than
- * captured once.
+ * captured once. A saved image's preset may give its own width.
  */
-function trackStyle(activity) {
-    const width = displaySettings.lineWidth;
+function trackStyle(activity, width = displaySettings.lineWidth) {
     return displaySettings.thinLines
         ? { color: activity.color, weight: width * THIN_TRACK_WIDTH_FACTOR, opacity: THIN_TRACK_OPACITY }
         : { color: activity.color, weight: width, opacity: TRACK_OPACITY };
@@ -1528,8 +1528,8 @@ function initializeToggleControl() {
 }
 
 /**
- * The top-right column, top to bottom: hamburger, area-select tool, display
- * settings, zoom bar. Leaflet puts the zoom control in the top-left corner by default.
+ * The top-right column, top to bottom: hamburger, area-select tool, save image,
+ * display settings, zoom bar. Leaflet puts the zoom control in the top-left corner by default.
  */
 function arrangeTopRightControls() {
     const corner = mapInstance._controlCorners.topright;
@@ -1537,6 +1537,7 @@ function arrangeTopRightControls() {
     const column = [
         hamburger && hamburger.parentElement,
         document.getElementById('area-select-bar'),
+        document.getElementById('image-export-bar'),
         document.getElementById('display-settings-bar'),
         mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
     ].filter(Boolean);
@@ -1554,6 +1555,7 @@ function toggleMapControls() {
         mapInstance._controlCorners.topleft,
         document.getElementById('area-select-bar'),
         document.getElementById('display-settings-bar'),
+        document.getElementById('image-export-bar'),
         mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
     ];
     folded.forEach(function(el) {
@@ -1561,7 +1563,10 @@ function toggleMapControls() {
     });
     const typeMenu = document.getElementById('type-filter-menu');
     if (typeMenu) typeMenu.classList.remove('open');
-    if (mapControlsFolded) setDisplaySettingsOpen(false);
+    if (mapControlsFolded) {
+        setDisplaySettingsOpen(false);
+        setImageExportOpen(false);
+    }
 }
 
 /**
@@ -1664,6 +1669,7 @@ function setDisplaySettingsOpen(open) {
     const button = document.querySelector('.leaflet-control-display-settings');
     if (!dialog || !button) return;
     if (open) {
+        setImageExportOpen(false);
         // Level with the gear button, left of the button column.
         const top = Math.round(button.getBoundingClientRect().top);
         dialog.style.top = `${top}px`;
@@ -1677,7 +1683,7 @@ function initializeDisplaySettings() {
 
     const style = document.createElement('style');
     style.textContent = `
-        #display-settings-dialog {
+        .map-dialog {
             position: absolute;
             right: 60px;
             width: 260px;
@@ -1692,15 +1698,16 @@ function initializeDisplaySettings() {
             font-size: 12px;
             color: #333;
         }
-        #display-settings-dialog[hidden] { display: none; }
-        #display-settings-dialog .ds-head {
+        .map-dialog[hidden],
+        .map-dialog [hidden] { display: none !important; }
+        .map-dialog .ds-head {
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 8px 10px;
             border-bottom: 1px solid rgba(0,0,0,0.1);
         }
-        #display-settings-dialog .ds-close {
+        .map-dialog .ds-close {
             cursor: pointer;
             font-size: 16px;
             line-height: 1;
@@ -1709,27 +1716,27 @@ function initializeDisplaySettings() {
             background: none;
             border: none;
         }
-        #display-settings-dialog .ds-body {
+        .map-dialog .ds-body {
             display: flex;
             flex-direction: column;
             gap: 12px;
             padding: 10px;
         }
-        #display-settings-dialog label {
+        .map-dialog label {
             display: flex;
             align-items: center;
             gap: 6px;
             cursor: pointer;
         }
-        #display-settings-dialog .ds-hint {
+        .map-dialog .ds-hint {
             color: #777;
             margin-top: 2px;
         }
-        #display-settings-dialog .ds-row {
+        .map-dialog .ds-row {
             display: flex;
             justify-content: space-between;
         }
-        #display-settings-dialog input[type="range"] {
+        .map-dialog input[type="range"] {
             width: 100%;
             margin: 4px 0 0;
         }
@@ -1751,7 +1758,7 @@ function initializeDisplaySettings() {
     };
     L.DomEvent.disableClickPropagation(button);
 
-    // Its own bar under the area-select one (arrangeTopRightControls); it folds
+    // Its own bar under the save-image one (arrangeTopRightControls); it folds
     // away with the hamburger (see toggleMapControls).
     const DisplaySettingsControl = L.Control.extend({
         options: { position: 'topright' },
@@ -1768,6 +1775,7 @@ function initializeDisplaySettings() {
     // be judged in place; the gear, the close button or Escape close it.
     const dialog = document.createElement('div');
     dialog.id = 'display-settings-dialog';
+    dialog.className = 'map-dialog';
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-label', 'Display settings');
     dialog.hidden = true;
@@ -2016,6 +2024,7 @@ function onAreaSelectPointerDown(e) {
     if (areaSelectRectangle) {
         mapInstance.removeLayer(areaSelectRectangle);
     }
+    removeAreaSelectHandles();
     areaSelectRectangle = L.rectangle(L.latLngBounds(areaSelectStart, areaSelectStart), {
         color: '#2a7de1', weight: 2, dashArray: '5,5', fillOpacity: 0.08, interactive: false
     }).addTo(mapInstance);
@@ -2043,8 +2052,116 @@ function onAreaSelectPointerUp(e) {
     }
 
     areaSelectBounds = bounds;
-    imageExportStatus = '';
+    addAreaSelectHandles();
     showSelectionDialog();
+    // A new rectangle is what the image panel saves now.
+    imageExportArea = 'rect';
+    if (imageExportOpen()) resetImageExportStatus();
+}
+
+// ---- Resizing the rectangle -------------------------------------------------
+
+/*
+ * A finished rectangle gets eight handles, on its corners and the middles of
+ * its sides. Dragging one moves those edges; the others stay. They are Leaflet
+ * markers, whose dragging works with a mouse and a finger alike. The list (and
+ * the image panel) follow the new bounds, live while dragging.
+ */
+// [key, north/south edge it moves, west/east edge it moves, cursor]
+const AREA_SELECT_HANDLES = [
+    ['nw', 'n', 'w', 'nwse-resize'], ['n', 'n', null, 'ns-resize'], ['ne', 'n', 'e', 'nesw-resize'],
+    ['e', null, 'e', 'ew-resize'], ['se', 's', 'e', 'nwse-resize'], ['s', 's', null, 'ns-resize'],
+    ['sw', 's', 'w', 'nesw-resize'], ['w', null, 'w', 'ew-resize'],
+];
+let areaSelectHandles = null;       // L.LayerGroup of the handles, while a rectangle is shown
+let areaSelectHandleStylesInjected = false;
+
+function injectAreaSelectHandleStyles() {
+    if (areaSelectHandleStylesInjected) return;
+    areaSelectHandleStylesInjected = true;
+    const style = document.createElement('style');
+    style.textContent = `
+        .area-select-handle { background: none; border: none; }
+        /* A 10 px square to see, in a 20 px (touch: 32 px) box to grab. */
+        .area-select-handle div {
+            position: absolute; left: 50%; top: 50%;
+            width: 10px; height: 10px; margin: -6px 0 0 -6px;
+            background: #fff; border: 2px solid #2a7de1; border-radius: 2px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+/** Where a handle sits on the given bounds. */
+function areaSelectHandleLatLng(bounds, ns, we) {
+    const center = bounds.getCenter();
+    const lat = ns === 'n' ? bounds.getNorth() : ns === 's' ? bounds.getSouth() : center.lat;
+    const lng = we === 'w' ? bounds.getWest() : we === 'e' ? bounds.getEast() : center.lng;
+    return L.latLng(lat, lng);
+}
+
+/** The bounds with the handle's edges moved to latlng; the edges it doesn't move stay. */
+function resizedAreaBounds(start, ns, we, latlng) {
+    let south = start.getSouth(), north = start.getNorth(), west = start.getWest(), east = start.getEast();
+    if (ns === 'n') north = latlng.lat;
+    if (ns === 's') south = latlng.lat;
+    if (we === 'w') west = latlng.lng;
+    if (we === 'e') east = latlng.lng;
+    // Dragged past the opposite edge: the rectangle flips rather than turning inside out.
+    return L.latLngBounds([south, west], [north, east]);
+}
+
+function placeAreaSelectHandles(bounds, except) {
+    if (!areaSelectHandles) return;
+    areaSelectHandles.eachLayer(function(handle) {
+        if (handle !== except) handle.setLatLng(areaSelectHandleLatLng(bounds, handle.ns, handle.we));
+    });
+}
+
+function addAreaSelectHandles() {
+    removeAreaSelectHandles();
+    if (!areaSelectBounds) return;
+    injectAreaSelectHandleStyles();
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    const size = coarse ? 32 : 20;
+    areaSelectHandles = L.layerGroup().addTo(mapInstance);
+    AREA_SELECT_HANDLES.forEach(function([key, ns, we, cursor]) {
+        const handle = L.marker(areaSelectHandleLatLng(areaSelectBounds, ns, we), {
+            icon: L.divIcon({ className: `area-select-handle area-select-handle-${key}`, html: '<div></div>',
+                              iconSize: [size, size] }),
+            draggable: true,
+            keyboard: false,
+            zIndexOffset: 1000,
+        });
+        handle.ns = ns;
+        handle.we = we;
+        let start = null;
+        handle.on('dragstart', function() { start = areaSelectBounds; });
+        handle.on('drag', function(e) {
+            const bounds = resizedAreaBounds(start, ns, we, e.latlng);
+            areaSelectRectangle.setBounds(bounds);
+            areaSelectBounds = bounds;
+            placeAreaSelectHandles(bounds, handle);
+            refreshSelectionDialogIfOpen();
+        });
+        handle.on('dragend', function() {
+            // A side handle snaps back to the middle of its side.
+            placeAreaSelectHandles(areaSelectBounds);
+            areaSelectEndedAt = Date.now();  // its trailing click is not a tap
+            refreshSelectionDialogIfOpen();
+            if (imageExportOpen()) resetImageExportStatus();
+        });
+        handle.addTo(areaSelectHandles);
+        handle.getElement().style.cursor = cursor;
+    });
+}
+
+function removeAreaSelectHandles() {
+    if (areaSelectHandles) {
+        mapInstance.removeLayer(areaSelectHandles);
+        areaSelectHandles = null;
+    }
 }
 
 /** Drop a rectangle still being drawn (pinch, cancelled pointer); the tool stays armed. */
@@ -2068,11 +2185,13 @@ function clearSelection() {
         mapInstance.removeLayer(areaSelectRectangle);
         areaSelectRectangle = null;
     }
+    removeAreaSelectHandles();
     areaSelectBounds = null;
     tapSelectLatLng = null;
     const dialog = document.getElementById('area-selection-dialog');
     if (dialog) dialog.remove();
     raiseOpenPopupTrack();
+    if (imageExportOpen()) resetImageExportStatus();
 }
 
 // ---- The results dialog ----------------------------------------------------
@@ -2219,14 +2338,18 @@ function showSelectionDialog() {
         <div style="overflow-y:auto;">
             ${selection.length ? listRows : emptyMsg}
         </div>
-        ${isArea ? imageExportSectionHtml() : ''}
+        ${isArea ? `<div style="padding:8px 10px;border-top:1px solid rgba(0,0,0,0.1);">
+            <button type="button" id="area-sel-save-image" style="font-size:12px;cursor:pointer;">Save as image…</button>
+        </div>` : ''}
     `;
     document.body.appendChild(dialog);
     L.DomEvent.disableClickPropagation(dialog);
     L.DomEvent.disableScrollPropagation(dialog);
+    placeSelectionDialog();
 
     dialog.querySelector('#area-sel-close').onclick = clearSelection;
-    wireImageExportControls();
+    const saveImageButton = dialog.querySelector('#area-sel-save-image');
+    if (saveImageButton) saveImageButton.onclick = openImageExportForRectangle;
 
     dialog.querySelectorAll('input[name="area-sel-mode"]').forEach(function(input) {
         input.onchange = function() {
@@ -2272,31 +2395,40 @@ function showSelectionDialog() {
 }
 
 /* ============================================================================
- * Save the selected rectangle as an image, with more detail than the screen.
+ * Save an image of the drawn rectangle or of a preset area, with more detail
+ * than the screen (the camera button's panel).
  *
  * A page cannot screenshot itself, so the image is drawn anew on a canvas at a
- * higher zoom level: the active base map's tiles for that zoom, then the visible
- * tracks (already date- and type-filtered, see collectVisibleActivities) in their
- * current style, the direction of highlighted tracks, and the tile attribution
+ * chosen zoom level: the base map's tiles for that zoom, then the tracks in
+ * their style, the direction of highlighted tracks, and the tile attribution
  * the providers' terms require (plus the Mapy.com logo on Mapy.com tiles).
+ * A rectangle draws what the map shows (see rectangleTracks); a preset from
+ * [[image-presets]] has a fixed area and zoom, so its images are comparable,
+ * and may fix the dates, types and base map too (see presetTracks).
  *
  * Reading the tiles' pixels needs CORS: OpenStreetMap and CARTO allow any site,
  * Mapy.com echoes the page's origin. A provider that doesn't fails the tile.
  * ========================================================================== */
 // The same tile server policies apply as to browsing: OpenStreetMap forbids bulk
 // downloading and Mapy.com bills each tile, so one image stays small.
+// mapgenerator.py warns about presets over these limits.
 const IMAGE_EXPORT_MAX_TILES = 400;
 // Canvas limits: iOS Safari gives up around 16.7 megapixels; desktop browsers go
 // further but encoding the PNG gets slow.
 const IMAGE_EXPORT_MAX_SIDE = 16384;
 const IMAGE_EXPORT_TILE_TIMEOUT_MS = 20000;
 const IMAGE_EXPORT_PARALLEL_TILES = 6;
+// Without the map (transparent background) only the image size sets the limit.
+const IMAGE_EXPORT_MAX_ZOOM_WITHOUT_MAP = 22;
 const MAPY_LOGO_URL = 'https://api.mapy.com/img/api/logo.svg';
 
-let imageExportZoom = null;         // chosen zoom level, kept while the dialog is rebuilt
+let imageExportArea = 'rect';       // 'rect' (the drawn rectangle) or a preset's index
+let imageExportZoom = null;         // chosen zoom level for the rectangle
 let imageExportScaleLines = false;  // "enlarge lines with the image"
+let imageExportTransparent = false; // "transparent background": tracks only, for laying images over each other
 let imageExportRunning = false;
 let imageExportStatus = '';
+let imageExportOutline = null;      // the chosen preset's area on the map
 
 function imageExportMaxPixels() {
     return window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? 16e6 : 50e6;
@@ -2318,7 +2450,9 @@ function baseLayerMaxZoom(layer) {
 function imageExportPlan(bounds, layer, z) {
     const nw = mapInstance.project(bounds.getNorthWest(), z).round();
     const se = mapInstance.project(bounds.getSouthEast(), z).round();
-    const tileSize = layer.getTileSize();
+    // From the options: the layer need not be on the map (a preset's base map).
+    const size = layer.options.tileSize;
+    const tileSize = size instanceof L.Point ? size : L.point(size, size);
     const min = L.point(Math.floor(nw.x / tileSize.x), Math.floor(nw.y / tileSize.y));
     const max = L.point(Math.ceil(se.x / tileSize.x) - 1, Math.ceil(se.y / tileSize.y) - 1);
     return {
@@ -2329,8 +2463,9 @@ function imageExportPlan(bounds, layer, z) {
     };
 }
 
-function imageExportPlanFits(plan) {
-    return plan.tiles <= IMAGE_EXPORT_MAX_TILES &&
+/** Whether an image fits the limits; one without a map (transparent) downloads no tiles. */
+function imageExportPlanFits(plan, transparent = false) {
+    return (transparent || plan.tiles <= IMAGE_EXPORT_MAX_TILES) &&
         plan.width <= IMAGE_EXPORT_MAX_SIDE && plan.height <= IMAGE_EXPORT_MAX_SIDE &&
         plan.width * plan.height <= imageExportMaxPixels();
 }
@@ -2340,12 +2475,13 @@ function imageExportPlanFits(plan) {
  * last one, as far as they fit the limits. The first one that doesn't fit is
  * listed too (disabled), so it is clear why the list ends.
  */
-function imageExportChoices(bounds, layer) {
+function imageExportChoices(bounds, layer, transparent) {
     const current = Math.round(mapInstance.getZoom());
+    const maxZoom = transparent ? IMAGE_EXPORT_MAX_ZOOM_WITHOUT_MAP : baseLayerMaxZoom(layer);
     const choices = [];
-    for (let z = current; z <= baseLayerMaxZoom(layer); z++) {
+    for (let z = current; z <= maxZoom; z++) {
         const plan = imageExportPlan(bounds, layer, z);
-        const fits = imageExportPlanFits(plan);
+        const fits = imageExportPlanFits(plan, transparent);
         choices.push({ plan, fits, factor: Math.pow(2, z - current) });
         if (!fits) break;
     }
@@ -2381,13 +2517,13 @@ function loadCorsImage(url) {
 }
 
 /** Draws the tiles; returns how many failed. */
-async function drawExportTiles(ctx, layer, plan, onProgress) {
+async function drawExportTiles(ctx, layer, plan, mapOpacity, onProgress) {
     const jobs = [];
     for (let y = plan.min.y; y <= plan.max.y; y++) {
         for (let x = plan.min.x; x <= plan.max.x; x++) jobs.push({ x, y });
     }
     let done = 0, failed = 0, next = 0;
-    ctx.globalAlpha = displaySettings.mapOpacity / 100;
+    ctx.globalAlpha = mapOpacity / 100;
     async function worker() {
         while (next < jobs.length) {
             const job = jobs[next++];
@@ -2492,7 +2628,7 @@ function drawExportTrackEnd(ctx, p, kind, scale) {
  * The visible tracks in the order they are painted on screen (a highlighted
  * track is brought to the front), with the style they have now.
  */
-function exportTracks(bounds) {
+function rectangleTracks(bounds) {
     const tracks = collectVisibleActivities()
         .map(item => item.polyline)
         .filter(polyline => polyline.getBounds().intersects(bounds));
@@ -2567,12 +2703,6 @@ async function drawExportAttribution(ctx, layer, width, height, scale) {
     }
 }
 
-function setImageExportStatus(text) {
-    imageExportStatus = text;
-    const el = document.getElementById('image-export-status');
-    if (el) el.textContent = text;
-}
-
 function canvasToBlob(canvas) {
     return new Promise(function(resolve, reject) {
         try {
@@ -2583,22 +2713,25 @@ function canvasToBlob(canvas) {
     });
 }
 
-/**
- * Draws the rectangle at zoom z and hands it to the browser as a PNG download.
- * The tracks are taken when the button is pressed, so changing the filters
- * while the tiles load doesn't mix two states in one image.
- */
-async function saveMapImage(bounds, z) {
-    const layer = activeBaseLayer();
-    if (!layer || imageExportRunning) return;
-    const plan = imageExportPlan(bounds, layer, z);
-    if (!imageExportPlanFits(plan) || plan.width < 1 || plan.height < 1) return;
+/** Today in the viewer's calendar, 'YYYY-MM-DD', for file names. */
+function localIsoDate() {
+    const now = new Date();
+    return dayToIsoDate(dayFromParts(now.getFullYear(), now.getMonth(), now.getDate()));
+}
 
-    // Lines, markers and the attribution keep their screen size, like zooming in,
-    // unless "enlarge lines" makes the image an enlargement of the screen.
-    const lineScale = imageExportScaleLines ? Math.max(1, Math.pow(2, z - mapInstance.getZoom())) : 1;
-    const tracks = exportTracks(bounds);
-    const background = getComputedStyle(mapInstance.getContainer()).backgroundColor || '#ddd';
+/**
+ * Draws an image and hands it to the browser as a PNG download. A job is
+ * { bounds, z, layer, mapOpacity, lineScale, fileName, tracks }; tracks may be
+ * a promise. A map opacity of 0 leaves the map out: the tracks on a transparent
+ * background, to lay images over each other, with no attribution as no map is shown.
+ * The job is made when the button is pressed, so changing the filters while
+ * the tiles load doesn't mix two states in one image.
+ */
+async function saveMapImage(job) {
+    if (imageExportRunning) return;
+    const transparent = job.mapOpacity === 0;
+    const plan = imageExportPlan(job.bounds, job.layer, job.z);
+    if (!imageExportPlanFits(plan, transparent) || plan.width < 1 || plan.height < 1) return;
 
     imageExportRunning = true;
     updateImageExportControls();
@@ -2608,33 +2741,37 @@ async function saveMapImage(bounds, z) {
         canvas.height = plan.height;
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('the browser could not create an image this large');
-        ctx.fillStyle = background;
-        ctx.fillRect(0, 0, plan.width, plan.height);
-
-        const failed = await drawExportTiles(ctx, layer, plan, function(done, total) {
-            setImageExportStatus(`Downloading map tiles ${done} / ${total}…`);
-        });
-        if (failed === plan.tiles) {
-            throw new Error('the map tiles could not be loaded (the tile server may not allow saving them)');
+        let failed = 0;
+        if (!transparent) {
+            // The map's ground: Leaflet's grey, or white under a faded map (applyMapOpacity).
+            ctx.fillStyle = job.mapOpacity < 100 ? '#fff' : '#ddd';
+            ctx.fillRect(0, 0, plan.width, plan.height);
+            failed = await drawExportTiles(ctx, job.layer, plan, job.mapOpacity, function(done, total) {
+                setImageExportStatus(`Downloading map tiles ${done} / ${total}…`);
+            });
+            if (failed === plan.tiles) {
+                throw new Error('the map tiles could not be loaded (the tile server may not allow saving them)');
+            }
         }
         setImageExportStatus('Drawing…');
-        drawExportTracks(ctx, tracks, plan, lineScale);
-        // Enlarged with the lines, but only to about its share of a screen-sized map.
-        const attributionScale = Math.min(lineScale, Math.max(1, Math.min(plan.width, plan.height) / 800));
-        await drawExportAttribution(ctx, layer, plan.width, plan.height, attributionScale);
+        drawExportTracks(ctx, await job.tracks, plan, job.lineScale);
+        if (!transparent) {
+            // Enlarged with the lines, but only to about its share of a screen-sized map.
+            const attributionScale = Math.min(job.lineScale, Math.max(1, Math.min(plan.width, plan.height) / 800));
+            await drawExportAttribution(ctx, job.layer, plan.width, plan.height, attributionScale);
+        }
 
         const blob = await canvasToBlob(canvas);
-        const fileName = `activities-map-${dayToIsoDate(Math.floor(Date.now() / DAY_MS))}-z${z}.png`;
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = fileName;
+        link.download = job.fileName;
         document.body.appendChild(link);
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(link.href), 60000);
         setImageExportStatus(failed
-            ? `Saved ${fileName}, but ${failed} map tile${failed === 1 ? '' : 's'} could not be loaded and ${failed === 1 ? 'is' : 'are'} blank.`
-            : `Saved ${fileName} (${plan.width} × ${plan.height} px).`);
+            ? `Saved ${job.fileName}, but ${failed} map tile${failed === 1 ? '' : 's'} could not be loaded and ${failed === 1 ? 'is' : 'are'} blank.`
+            : `Saved ${job.fileName} (${plan.width} × ${plan.height} px).`);
     } catch (e) {
         console.error('Saving the map image failed:', e);
         setImageExportStatus(`Could not save the image: ${e.message}`);
@@ -2644,72 +2781,339 @@ async function saveMapImage(bounds, z) {
     }
 }
 
-/** The "Save image" footer of a rectangle's selection dialog. */
-function imageExportSectionHtml() {
-    return `
-        <div id="image-export" style="padding:8px 10px;border-top:1px solid rgba(0,0,0,0.1);display:flex;flex-direction:column;gap:6px;">
-            <div style="display:flex;gap:6px;align-items:center;">
-                <select id="image-export-zoom" title="Detail of the saved image" style="flex:1;min-width:0;font-size:12px;"></select>
-                <button id="image-export-save" type="button" style="font-size:12px;cursor:pointer;">Save image</button>
-            </div>
-            <label style="cursor:pointer;"><input type="checkbox" id="image-export-scale-lines"> Enlarge lines with the image</label>
-            <div id="image-export-status" style="color:#666;"></div>
-        </div>`;
+// ---- Presets: fixed areas from [[image-presets]] in the config -------------
+
+function imagePresets() {
+    return (manifest && manifest.config && manifest.config.image_presets) || [];
 }
 
-/** Fills the zoom choices for the current rectangle, base map and zoom, and the status line. */
-function updateImageExportControls() {
-    const select = document.getElementById('image-export-zoom');
-    const button = document.getElementById('image-export-save');
-    const scaleLines = document.getElementById('image-export-scale-lines');
-    if (!select || !button || !areaSelectBounds) return;
+/** The chosen preset, or null while the drawn rectangle is chosen. */
+function chosenImagePreset() {
+    return imageExportArea === 'rect' ? null : imagePresets()[imageExportArea] || null;
+}
+
+function baseLayerName(layer) {
+    return Object.keys(baseLayers).find(name => baseLayers[name] === layer) || '';
+}
+
+/** The preset's own base map when it names one that exists here, else the one shown. */
+function presetBaseLayer(preset) {
+    return (preset.tiles && baseLayers[preset.tiles]) || activeBaseLayer();
+}
+
+/** The categories drawn now, in manifest order. */
+function shownCategories() {
+    return Object.keys(manifest.categories).filter(name => layerGroups[name] && mapInstance.hasLayer(layerGroups[name]));
+}
+
+/** The date range a preset draws, as { start, end } ISO dates, or null for no limit. */
+function presetDateRange(preset) {
+    const range = preset.date_range;
+    if (range === undefined) return currentDateRange;
+    if (Array.isArray(range)) return { start: range[0], end: range[1] };
+    const minDay = isoDateToDay(manifest.date_range.min_date);
+    const maxDay = isoDateToDay(manifest.date_range.max_date);
+    const days = datePresetRange(range, minDay, maxDay);
+    return days ? { start: dayToIsoDate(days[0]), end: dayToIsoDate(days[1]) } : currentDateRange;
+}
+
+/**
+ * A preset's tracks, straight from the activity data rather than the map, so its
+ * own date range and types apply and nothing is highlighted. What it leaves out
+ * follows the map, read now, before the data is awaited.
+ */
+async function presetTracks(preset, bounds) {
+    const range = presetDateRange(preset);
+    const categories = preset.types || shownCategories();
+    const tracks = [];
+    for (const name of Object.keys(manifest.categories).filter(n => categories.includes(n))) {
+        const info = manifest.categories[name];
+        if (!info.activity_count || !info.data_file) continue;
+        const activities = await fetchCategoryActivities(name, info);
+        activities.forEach(function(activity) {
+            const coords = activity.coordinates;
+            if (!coords || coords.length === 0) return;
+            if (range && (activity.date < range.start || activity.date > range.end)) return;
+            if (!L.latLngBounds(coords).intersects(bounds)) return;
+            tracks.push({
+                latlngs: coords.map(c => L.latLng(c)),
+                style: trackStyle(activity, preset.line_width || displaySettings.lineWidth),
+                direction: false,
+            });
+        });
+    }
+    return tracks;
+}
+
+function presetFileName(preset, transparent) {
+    const slug = preset.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'preset';
+    return `${slug}-${localIsoDate()}${transparent ? '-transparent' : ''}.png`;
+}
+
+/** A preset's map opacity in percent: its own, 0 when "transparent background" is ticked, else the map's. */
+function presetMapOpacity(preset) {
+    if (preset.map_opacity !== undefined) return preset.map_opacity;
+    return imageExportTransparent ? 0 : displaySettings.mapOpacity;
+}
+
+/** What a preset will draw, and whether it can: { plan, layer, problem, fixed, transparent }. */
+function describePreset(preset) {
+    const layer = presetBaseLayer(preset);
+    if (!layer) return { problem: 'No base map is shown.' };
+    const plan = imageExportPlan(L.latLngBounds(preset.bounds), layer, preset.zoom);
+    const transparent = presetMapOpacity(preset) === 0;
+    let problem = null;
+    if (!transparent && preset.zoom > baseLayerMaxZoom(layer)) {
+        problem = `Zoom ${preset.zoom} is more than ${baseLayerName(layer) || 'this map'} has (${baseLayerMaxZoom(layer)}).`;
+    } else if (!imageExportPlanFits(plan, transparent)) {
+        problem = `Too large to save here (${plan.width} × ${plan.height} px` +
+            (transparent ? '' : `, ${plan.tiles} tiles`) + '). Lower its zoom or shrink its bounds.';
+    }
+    const dateLabel = (DATE_PRESET_OPTIONS.find(o => o[0] === preset.date_range) || [])[1] ||
+        (/^year-(\d{4})$/.exec(preset.date_range || '') || [])[1] ||
+        (Array.isArray(preset.date_range) ? preset.date_range.join(' – ') : null);
+    const tilesMissing = preset.tiles && !baseLayers[preset.tiles];
+    let mapLine = 'none, transparent background';
+    if (!transparent) {
+        mapLine = (preset.tiles && !tilesMissing ? preset.tiles : 'as on the map') +
+            (tilesMissing ? ` (${preset.tiles} is not available)` : '') +
+            (preset.map_opacity !== undefined ? ` at ${preset.map_opacity} %` : '');
+    }
+    const lineWidth = preset.line_width ? `${preset.line_width} px` : 'as in the display settings';
+    const fixed = [
+        `Dates: ${dateLabel || 'as on the map'}`,
+        `Types: ${preset.types ? (preset.types.join(', ') || 'none') : 'as on the map'}`,
+        `Map: ${mapLine}`,
+        `Lines: ${lineWidth}${preset.line_scale ? `, × ${preset.line_scale}` : ''}`,
+    ];
+    return { plan, layer, problem, fixed, transparent };
+}
+
+function presetExportJob(preset) {
+    const bounds = L.latLngBounds(preset.bounds);
+    const mapOpacity = presetMapOpacity(preset);
+    return {
+        bounds, z: preset.zoom, layer: presetBaseLayer(preset), mapOpacity,
+        lineScale: preset.line_scale || 1,
+        fileName: presetFileName(preset, mapOpacity === 0),
+        tracks: presetTracks(preset, bounds),
+    };
+}
+
+function rectangleExportJob() {
     const layer = activeBaseLayer();
-    const choices = layer ? imageExportChoices(areaSelectBounds, layer) : [];
-    const usable = choices.filter(c => c.fits);
-    if (!usable.some(c => c.plan.z === imageExportZoom)) {
-        // Default: the most detail that fits, but no more than 4x the screen.
-        const preferred = usable.filter(c => c.factor <= 4);
-        imageExportZoom = preferred.length ? preferred[preferred.length - 1].plan.z : null;
-    }
-    select.innerHTML = choices.map(function(c) {
-        const label = c.factor === 1 ? 'As on screen' : `${c.factor}× detail`;
-        const size = c.fits ? `${c.plan.width} × ${c.plan.height} px` : 'too large';
-        return `<option value="${c.plan.z}" ${c.fits ? '' : 'disabled'} ${c.plan.z === imageExportZoom ? 'selected' : ''}>` +
-            `${label} · ${size}</option>`;
-    }).join('');
-    scaleLines.checked = imageExportScaleLines;
-    button.disabled = imageExportRunning || imageExportZoom == null;
-    select.disabled = imageExportRunning;
+    if (!layer || !areaSelectBounds || imageExportZoom == null) return null;
+    const z = imageExportZoom;
+    return {
+        bounds: areaSelectBounds, z, layer,
+        mapOpacity: imageExportTransparent ? 0 : displaySettings.mapOpacity,
+        // Lines, markers and the attribution keep their screen size, like zooming in,
+        // unless "enlarge lines" makes the image an enlargement of the screen.
+        lineScale: imageExportScaleLines ? Math.max(1, Math.pow(2, z - mapInstance.getZoom())) : 1,
+        fileName: `activities-map-${localIsoDate()}-z${z}${imageExportTransparent ? '-transparent' : ''}.png`,
+        tracks: rectangleTracks(areaSelectBounds),
+    };
+}
 
-    if (imageExportRunning) {
-        setImageExportStatus(imageExportStatus);
-    } else if (!layer) {
-        setImageExportStatus('No base map is shown.');
-    } else if (imageExportZoom == null) {
-        setImageExportStatus('The rectangle is too large to save. Draw a smaller one or zoom out.');
-    } else if (!imageExportStatus) {
-        const chosen = usable.find(c => c.plan.z === imageExportZoom);
-        setImageExportStatus(`${chosen.plan.tiles} map tile${chosen.plan.tiles === 1 ? '' : 's'} to download (zoom ${chosen.plan.z}).`);
-    } else {
-        setImageExportStatus(imageExportStatus);
+/**
+ * The drawn rectangle as a [[image-presets]] entry for config-local.toml. The
+ * map's current filters are included commented out, to fix them if wanted.
+ */
+function rectanglePresetToml(bounds, z) {
+    const f = v => v.toFixed(4);
+    const presetSelect = document.getElementById('date-range-preset');
+    let dateRange = null;
+    if (presetSelect && presetSelect.value && presetSelect.value !== 'custom') {
+        dateRange = `"${presetSelect.value}"`;
+    } else if (currentDateRange) {
+        dateRange = `["${currentDateRange.start}", "${currentDateRange.end}"]`;
+    }
+    const lines = [
+        '[[image-presets]]',
+        'name = "My area"',
+        `bounds = [[${f(bounds.getSouth())}, ${f(bounds.getWest())}], [${f(bounds.getNorth())}, ${f(bounds.getEast())}]]`,
+        `zoom = ${z}`,
+        '# To fix these instead of following the map, remove the #:',
+    ];
+    if (dateRange) lines.push(`# date-range = ${dateRange}`);
+    lines.push(`# types = [${shownCategories().map(n => `"${n}"`).join(', ')}]`);
+    const tiles = baseLayerName(activeBaseLayer());
+    if (tiles) lines.push(`# tiles = "${tiles}"`);
+    lines.push(`# line-width = ${displaySettings.lineWidth}`);
+    lines.push(`# map-opacity = ${imageExportTransparent ? 0 : displaySettings.mapOpacity}   # 0: no map, transparent background`);
+    return lines.join('\n');
+}
+
+async function copyRectangleAsPreset() {
+    if (!areaSelectBounds || imageExportZoom == null) return;
+    const toml = rectanglePresetToml(areaSelectBounds, imageExportZoom);
+    const box = document.getElementById('image-export-preset-toml');
+    box.value = toml;
+    box.hidden = false;
+    box.rows = toml.split('\n').length;
+    box.focus();
+    box.select();
+    let copied = false;
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(toml);
+            copied = true;
+        }
+    } catch (e) { /* not allowed here: the text box is the fallback */ }
+    setImageExportStatus((copied ? 'Copied. Paste it' : 'Copy the text above') +
+        ' into config-local.toml, give it a name and generate the map again.');
+}
+
+// ---- The "Save image" panel -------------------------------------------------
+
+const IMAGE_EXPORT_ICON =
+    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+    '<path d="M4 7.5h3.2l1.6-2.3h6.4l1.6 2.3H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1z" ' +
+    'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>' +
+    '<circle cx="12" cy="12.8" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+
+function setImageExportOpen(open) {
+    const dialog = document.getElementById('image-export-dialog');
+    const button = document.querySelector('.leaflet-control-image-export');
+    if (!dialog || !button) return;
+    if (open) {
+        setDisplaySettingsOpen(false);
+        const top = Math.round(button.getBoundingClientRect().top);
+        dialog.style.top = `${top}px`;
+        imageExportStatus = '';
+    }
+    dialog.hidden = !open;
+    button.setAttribute('aria-expanded', String(open));
+    if (open) updateImageExportControls();
+    updateImageExportOutline();
+    placeSelectionDialog();
+}
+
+/** The selection dialog sits where the panel opens: it steps aside while the panel is open. */
+function placeSelectionDialog() {
+    const selection = document.getElementById('area-selection-dialog');
+    if (selection) selection.style.display = imageExportOpen() ? 'none' : 'flex';
+}
+
+function imageExportOpen() {
+    const dialog = document.getElementById('image-export-dialog');
+    return !!dialog && !dialog.hidden;
+}
+
+/** Open the panel on the drawn rectangle (the selection dialog's button). */
+function openImageExportForRectangle() {
+    imageExportArea = 'rect';
+    setImageExportOpen(true);
+}
+
+/** The chosen preset's area, dashed, while the panel is open. */
+function updateImageExportOutline() {
+    const preset = imageExportOpen() ? chosenImagePreset() : null;
+    if (imageExportOutline) {
+        mapInstance.removeLayer(imageExportOutline);
+        imageExportOutline = null;
+    }
+    if (preset) {
+        imageExportOutline = L.rectangle(preset.bounds, {
+            color: '#e67e22', weight: 2, dashArray: '6,4', fill: false, interactive: false
+        }).addTo(mapInstance);
     }
 }
 
-function wireImageExportControls() {
-    const select = document.getElementById('image-export-zoom');
-    if (!select) return;
-    select.onchange = function() {
-        imageExportZoom = parseInt(select.value, 10);
-        imageExportStatus = '';
-        updateImageExportControls();
-    };
-    document.getElementById('image-export-scale-lines').onchange = function() {
-        imageExportScaleLines = this.checked;
-    };
-    document.getElementById('image-export-save').onclick = function() {
-        if (areaSelectBounds && imageExportZoom != null) saveMapImage(areaSelectBounds, imageExportZoom);
-    };
-    updateImageExportControls();
+function setImageExportStatus(text) {
+    imageExportStatus = text;
+    const el = document.getElementById('image-export-status');
+    if (el) el.textContent = text;
+}
+
+/** Fills the panel for the chosen area: detail, what a preset fixes, buttons and status. */
+function updateImageExportControls() {
+    const dialog = document.getElementById('image-export-dialog');
+    if (!dialog) return;
+    const areaSelect = dialog.querySelector('#image-export-area');
+    const zoomSelect = dialog.querySelector('#image-export-zoom');
+    const info = dialog.querySelector('#image-export-preset-info');
+    const scaleRow = dialog.querySelector('#image-export-scale-lines-row');
+    const saveButton = dialog.querySelector('#image-export-save');
+    const copyButton = dialog.querySelector('#image-export-copy-preset');
+    const showButton = dialog.querySelector('#image-export-show');
+
+    const presets = imagePresets();
+    if (imageExportArea !== 'rect' && !presets[imageExportArea]) imageExportArea = 'rect';
+    areaSelect.innerHTML =
+        `<option value="rect">${areaSelectBounds ? 'Drawn rectangle' : 'Drawn rectangle (draw one first)'}</option>` +
+        presets.map((p, i) => `<option value="${i}"></option>`).join('');
+    // Names come from the config: set as text, not HTML.
+    presets.forEach((p, i) => { areaSelect.options[i + 1].textContent = p.name; });
+    areaSelect.value = String(imageExportArea);
+    areaSelect.disabled = imageExportRunning;
+
+    const preset = chosenImagePreset();
+    zoomSelect.hidden = !!preset || !areaSelectBounds;
+    scaleRow.hidden = !!preset || !areaSelectBounds;
+    copyButton.hidden = !!preset;
+    info.hidden = !preset;
+    dialog.querySelector('#image-export-preset-toml').hidden ||= !!preset;
+
+    // A preset with its own map opacity decides; otherwise the checkbox does.
+    const transparentRow = dialog.querySelector('#image-export-transparent-row');
+    const transparentBox = dialog.querySelector('#image-export-transparent');
+    const presetDecides = !!preset && preset.map_opacity !== undefined;
+    transparentBox.checked = presetDecides ? preset.map_opacity === 0 : imageExportTransparent;
+    transparentBox.disabled = imageExportRunning || presetDecides;
+    transparentRow.title = presetDecides ? 'Set by the preset (map-opacity)'
+        : 'Tracks only, without the map, to lay images over each other';
+    transparentRow.hidden = !preset && !areaSelectBounds;
+
+    let canSave = false, idleStatus = '';
+    if (preset) {
+        const d = describePreset(preset);
+        info.innerHTML = d.plan
+            ? `<div>${d.plan.width} × ${d.plan.height} px · zoom ${preset.zoom} · ` +
+              `${d.transparent ? 'no map tiles' : `${d.plan.tiles} map tiles`}</div>` +
+              d.fixed.map(line => `<div>${line}</div>`).join('')
+            : '';
+        canSave = !d.problem;
+        idleStatus = d.problem || '';
+        showButton.disabled = false;
+    } else {
+        const layer = activeBaseLayer();
+        const choices = layer && areaSelectBounds ? imageExportChoices(areaSelectBounds, layer, imageExportTransparent) : [];
+        const usable = choices.filter(c => c.fits);
+        if (!usable.some(c => c.plan.z === imageExportZoom)) {
+            // Default: the most detail that fits, but no more than 4x the screen.
+            const preferred = usable.filter(c => c.factor <= 4);
+            imageExportZoom = preferred.length ? preferred[preferred.length - 1].plan.z : null;
+        }
+        zoomSelect.innerHTML = choices.map(function(c) {
+            const label = c.factor === 1 ? 'As on screen' : `${c.factor}× detail`;
+            const size = c.fits ? `${c.plan.width} × ${c.plan.height} px` : 'too large';
+            return `<option value="${c.plan.z}" ${c.fits ? '' : 'disabled'} ${c.plan.z === imageExportZoom ? 'selected' : ''}>` +
+                `${label} · ${size}</option>`;
+        }).join('');
+        zoomSelect.disabled = imageExportRunning || !choices.length;
+        dialog.querySelector('#image-export-scale-lines').checked = imageExportScaleLines;
+        canSave = imageExportZoom != null;
+        copyButton.disabled = !canSave;
+        showButton.disabled = !areaSelectBounds;
+        if (!areaSelectBounds) {
+            idleStatus = presets.length
+                ? 'Draw a rectangle with the area tool, or choose a preset.'
+                : 'Draw a rectangle with the area tool first.';
+        } else if (!layer) {
+            idleStatus = 'No base map is shown.';
+        } else if (!canSave) {
+            idleStatus = 'The rectangle is too large to save. Draw a smaller one or zoom out.';
+        } else {
+            const chosen = usable.find(c => c.plan.z === imageExportZoom);
+            idleStatus = imageExportTransparent
+                ? `Tracks only, no map tiles to download (zoom ${chosen.plan.z}).`
+                : `${chosen.plan.tiles} map tile${chosen.plan.tiles === 1 ? '' : 's'} to download (zoom ${chosen.plan.z}).`;
+        }
+    }
+    saveButton.disabled = imageExportRunning || !canSave;
+    setImageExportStatus(imageExportRunning || imageExportStatus ? imageExportStatus : idleStatus);
 }
 
 /** A new rectangle, zoom or base map changes what can be saved. */
@@ -2717,6 +3121,108 @@ function resetImageExportStatus() {
     if (imageExportRunning) return;
     imageExportStatus = '';
     updateImageExportControls();
+}
+
+function initializeImageExport() {
+    if (!mapInstance) return;
+
+    const button = L.DomUtil.create('a', 'leaflet-control-image-export');
+    button.href = '#';
+    button.title = 'Save image';
+    button.role = 'button';
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-expanded', 'false');
+    button.innerHTML = IMAGE_EXPORT_ICON;
+    button.style.cssText = 'display:flex;align-items:center;justify-content:center;cursor:pointer;';
+    button.onclick = function(e) {
+        L.DomEvent.stop(e);
+        setImageExportOpen(!imageExportOpen());
+    };
+    L.DomEvent.disableClickPropagation(button);
+
+    // Its own bar under the area-select one (arrangeTopRightControls); it folds
+    // away with the hamburger (see toggleMapControls).
+    const ImageExportControl = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function() {
+            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+            container.id = 'image-export-bar';
+            container.appendChild(button);
+            return container;
+        }
+    });
+    mapInstance.addControl(new ImageExportControl());
+
+    const dialog = document.createElement('div');
+    dialog.id = 'image-export-dialog';
+    dialog.className = 'map-dialog';
+    dialog.style.width = '300px';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-label', 'Save image');
+    dialog.hidden = true;
+    dialog.innerHTML = `
+        <div class="ds-head">
+            <strong style="font-size:13px;">Save image</strong>
+            <button type="button" class="ds-close" id="image-export-close" title="Close">✕</button>
+        </div>
+        <div class="ds-body">
+            <div>
+                <div class="ds-row"><label for="image-export-area">Area</label></div>
+                <select id="image-export-area" style="width:100%;margin-top:4px;font-size:12px;"></select>
+            </div>
+            <select id="image-export-zoom" title="Detail of the saved image" style="width:100%;font-size:12px;"></select>
+            <div id="image-export-preset-info" class="ds-hint" style="line-height:1.5;"></div>
+            <label id="image-export-scale-lines-row"><input type="checkbox" id="image-export-scale-lines"> Enlarge lines with the image</label>
+            <label id="image-export-transparent-row"><input type="checkbox" id="image-export-transparent"> Transparent background (tracks only)</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button id="image-export-save" type="button" style="font-size:12px;cursor:pointer;">Save image</button>
+                <button id="image-export-copy-preset" type="button" style="font-size:12px;cursor:pointer;" title="The rectangle as an [[image-presets]] entry for config-local.toml">Copy as preset</button>
+                <button id="image-export-show" type="button" style="font-size:12px;cursor:pointer;">Show on map</button>
+            </div>
+            <textarea id="image-export-preset-toml" readonly hidden spellcheck="false" wrap="off"
+                style="width:100%;box-sizing:border-box;font:11px monospace;resize:vertical;"></textarea>
+            <div id="image-export-status" style="color:#666;"></div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    L.DomEvent.disableClickPropagation(dialog);
+    L.DomEvent.disableScrollPropagation(dialog);
+
+    dialog.querySelector('#image-export-close').onclick = () => setImageExportOpen(false);
+    dialog.querySelector('#image-export-area').onchange = function() {
+        imageExportArea = this.value === 'rect' ? 'rect' : parseInt(this.value, 10);
+        dialog.querySelector('#image-export-preset-toml').hidden = true;
+        resetImageExportStatus();
+        updateImageExportOutline();
+    };
+    dialog.querySelector('#image-export-zoom').onchange = function() {
+        imageExportZoom = parseInt(this.value, 10);
+        resetImageExportStatus();
+    };
+    dialog.querySelector('#image-export-scale-lines').onchange = function() {
+        imageExportScaleLines = this.checked;
+    };
+    dialog.querySelector('#image-export-transparent').onchange = function() {
+        imageExportTransparent = this.checked;
+        resetImageExportStatus();  // without tiles, more zooms fit
+    };
+    dialog.querySelector('#image-export-save').onclick = function() {
+        const preset = chosenImagePreset();
+        const job = preset ? presetExportJob(preset) : rectangleExportJob();
+        if (job) saveMapImage(job);
+    };
+    dialog.querySelector('#image-export-copy-preset').onclick = copyRectangleAsPreset;
+    dialog.querySelector('#image-export-show').onclick = function() {
+        const preset = chosenImagePreset();
+        const bounds = preset ? L.latLngBounds(preset.bounds) : areaSelectBounds;
+        if (bounds) mapInstance.fitBounds(bounds);
+    };
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') setImageExportOpen(false);
+    });
+    mapInstance.on('zoomend baselayerchange', function() {
+        if (imageExportOpen()) resetImageExportStatus();
+    });
 }
 
 function initializeAreaSelection() {
@@ -2766,7 +3272,6 @@ function initializeAreaSelection() {
     // Not passive, so preventDefault can stop the browser's own scrolling.
     mapEl.addEventListener('touchstart', onAreaSelectTouch, { passive: false });
     mapEl.addEventListener('touchmove', onAreaSelectTouch, { passive: false });
-    mapInstance.on('zoomend baselayerchange', resetImageExportStatus);
 }
 
 /* ============================================================================

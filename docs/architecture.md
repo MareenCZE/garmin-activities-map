@@ -216,8 +216,7 @@ The manifest lists, per category, its data file, activity count, colour and
 
 The providers' terms require their attribution to stay visible. The Leaflet
 attribution control is therefore always enabled, and the attribution strings and the
-Mapy.com logo must not be removed. A saved image (see "Saving the selection as an
-image") carries them too.
+Mapy.com logo must not be removed. A saved image (see "Saving an image") carries them too.
 
 ## Client-side behaviour
 
@@ -236,7 +235,7 @@ becomes a polyline in its category colour.
 
 - **Layout.** The top-left corner holds the date-range panel with the background and
   activity-type selectors below it. The top-right column holds a menu button, the
-  area-selection button, the display-settings button and the zoom bar
+  area-selection button, the save-image button, the display-settings button and the zoom bar
   (`arrangeTopRightControls`); the menu button hides and shows all the other controls.
 - **Display settings** (`initializeDisplaySettings`). The gear button opens a dialog
   with four settings, all remembered in `localStorage` (`activitiesMap.displaySettings`).
@@ -324,6 +323,13 @@ container uses `touch-action: none` and cancels `touchstart`/`touchmove`, becaus
 Safari ignores `touch-action` and would otherwise scroll the page; a hint is shown, and a
 second finger (a pinch) cancels the rectangle.
 
+A finished rectangle gets eight resize handles, on its corners and the middles of its
+sides (`addAreaSelectHandles`). They are draggable Leaflet markers, so they work with a
+mouse and a finger; a handle moves only its own edges (`resizedAreaBounds`), and
+dragging past the opposite edge flips the rectangle. The bounds and the list update
+while dragging, and a side handle snaps back to the middle of its side when released.
+The handles go with the rectangle when a new one is drawn or the selection is closed.
+
 The resulting dialog lists the activities in the rectangle with totals per category and
 overall (count, distance, time), a switch between tracks *partially* and *fully* inside
 the rectangle, and per-row highlight, popup and Garmin Connect links. Opening a popup
@@ -331,34 +337,59 @@ from a row does not move the map. The selection is computed from the polylines c
 on the map, so it follows the date and category filters, and it is recalculated
 (debounced) whenever they change while the rectangle is shown.
 
-### Saving the selection as an image
+### Saving an image
 
-The rectangle's dialog ends with a "Save image" footer (`imageExportSectionHtml`,
-`saveMapImage`). A page cannot screenshot itself, so the rectangle is drawn again on a
-canvas at a chosen zoom from the current one up to the base map's `maxNativeZoom`
-(`imageExportChoices`). The list stops at the first zoom that is too large, which is
-shown disabled: more than `IMAGE_EXPORT_MAX_TILES` (400) tiles, a side over 16384 px, or
-over 50 (touch devices: 16) megapixels. It is drawn in the map's order:
+The camera button (`initializeImageExport`) opens the "Save image" panel, a
+`.map-dialog` like the display settings; opening one closes the other, and the
+selection dialog is hidden while the panel is open (`placeSelectionDialog`). Its
+**Area** is the drawn rectangle or one of the presets. A page cannot screenshot
+itself, so the area is drawn again on a canvas (`saveMapImage`, which takes a job of
+bounds, zoom, base layer, line scale, file name and tracks):
 
-1. The container background, then the active base layer's tiles for that zoom
-   (`exportTileUrl` follows `L.TileLayer.getTileUrl`) at the *Map opacity*. Tiles are
-   loaded with `crossOrigin = 'anonymous'` so the canvas stays readable: OSM and CARTO
-   send `Access-Control-Allow-Origin: *`, Mapy.com echoes the page's origin (with
-   `Vary: Origin`, so tiles cached for the map are not reused without it). A tile from
-   a server without CORS fails like one that does not load; failed tiles stay blank and
-   are counted in the status line, and the image is not saved when all fail.
-2. The tracks from `collectVisibleActivities` (so the date and type filters apply), in
-   their SVG paint order and with their current `options`, i.e. display settings and
-   highlight. The tracks are taken when the button is pressed.
-3. For highlighted tracks: chevrons (`directionChevronArms`, shared with
-   `buildDirectionChevrons`) and start/finish markers (`trackEnds`, drawn on the canvas
-   to match the CSS markers).
-4. The base layer's attribution as text in the lower-right corner, and the Mapy.com logo
-   above it on Mapy.com tiles, as their terms require.
+- **Rectangle** (`rectangleExportJob`): the zoom is chosen from the current one up to
+  the base map's `maxNativeZoom` (`imageExportChoices`). The tracks are the polylines on
+  the map (`rectangleTracks`, from `collectVisibleActivities`), so the date and type
+  filters apply, in their SVG paint order and with their current `options` (display
+  settings, highlight). Highlighted tracks get chevrons (`directionChevronArms`, shared
+  with `buildDirectionChevrons`) and start/finish markers (`trackEnds`, drawn to match
+  the CSS markers). *Enlarge lines with the image* scales lines, markers and the
+  attribution by the zoom factor. *Copy as preset* (`rectanglePresetToml`) gives the
+  rectangle as a `[[image-presets]]` entry, with the map's current filters, line width
+  and map opacity commented out.
+- **Preset** (`presetExportJob`): area and zoom come from the preset, and its outline is
+  shown while chosen. Its tracks are read from the activity data (`presetTracks`,
+  loading categories that are not shown yet) rather than from the map, so its own
+  `date_range`, `types`, `tiles`, `line_width` (passed to `trackStyle`) and
+  `map_opacity` apply; what it leaves out follows the map and the display settings.
+  Nothing is highlighted, so its images stay comparable. `line_scale` multiplies the
+  line width.
 
-Lines, markers and attribution keep their screen size unless *Enlarge lines with the
-image* is ticked; then they are scaled by the zoom factor (the attribution only to about
-its share of a screen-sized map). The PNG is downloaded through an object URL.
+A job's `mapOpacity` of 0 means a transparent background: *Transparent background* in
+the panel, or a preset's `map_opacity = 0`, which also ticks and locks the box. The map
+is then left out entirely: no ground colour, no tiles, and no attribution, as no map is
+shown. Without tiles to download, the tile limit and the base map's last zoom do not
+apply; the zoom list goes up to `IMAGE_EXPORT_MAX_ZOOM_WITHOUT_MAP` (22) and only the
+image size limits it. Otherwise the ground is Leaflet's grey, or white under a faded
+map, as `applyMapOpacity` does on screen.
+
+The zoom list and the presets are bounded by the same limits: more than
+`IMAGE_EXPORT_MAX_TILES` (400) tiles (with a map), a side over 16384 px, or over 50 (touch devices:
+16) megapixels cannot be saved. The image is drawn in the map's order: the container
+background, the tiles for that zoom at the map opacity (`exportTileUrl` follows
+`L.TileLayer.getTileUrl`), the tracks, then the base layer's attribution in the
+lower-right corner and, on Mapy.com tiles, the Mapy.com logo above it. Tiles are loaded
+with `crossOrigin = 'anonymous'` so the canvas stays readable: OSM and CARTO send
+`Access-Control-Allow-Origin: *`, Mapy.com echoes the page's origin (with
+`Vary: Origin`, so tiles cached for the map are not reused without it). A tile from a
+server without CORS fails like one that does not load; failed tiles stay blank and are
+counted in the status line, and nothing is saved when all fail. The PNG is downloaded
+through an object URL.
+
+Presets come from `[[image-presets]]` in the config. `mapgenerator.get_image_presets`
+checks them and puts them into `manifest.json` (`config.image_presets`): a preset with a
+bad name, bounds or zoom is left out, a bad optional key is dropped with a warning, and
+a preset over the limits (computed by `image_preset_size` like the page does; no tile
+limit with `map-opacity = 0`) is kept with a warning.
 
 ### Mapy.com logo
 

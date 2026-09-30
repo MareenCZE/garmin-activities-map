@@ -225,6 +225,18 @@ def test_rectangle_can_be_drawn_by_touch(served_map):
             assert page.evaluate("() => mapInstance.dragging.enabled()") is True
             assert page.locator("#area-select-hint").count() == 0
             assert page.evaluate("() => window.touchMovesAllowed") == 0
+
+            # A finger resizes it too: the south handle down to 49.98.
+            handle = page.locator(".area-select-handle-s").bounding_box()
+            target = page.evaluate(
+                "() => { const r = mapInstance.getContainer().getBoundingClientRect();"
+                " const p = mapInstance.latLngToContainerPoint([49.98, 14.0]);"
+                " return {x: r.left + p.x, y: r.top + p.y}; }")
+            _touch_drag(page, handle["x"] + handle["width"] / 2, handle["y"] + handle["height"] / 2,
+                        target["x"], target["y"])
+            south = page.evaluate("() => areaSelectBounds.getSouth()")
+            assert south == pytest.approx(49.98, abs=3e-4)
+            assert page.evaluate("() => mapInstance.getCenter()") == center_before
         finally:
             browser.close()
 
@@ -510,3 +522,89 @@ def test_tool_absent_when_disabled(config, tmp_path):
                 browser.close()
     finally:
         httpd.shutdown()
+
+
+def _drag_handle_to(page, key, lat, lng):
+    """Drag one of the rectangle's resize handles, with a real mouse, to [lat, lng]."""
+    box = page.locator(f".area-select-handle-{key}").bounding_box()
+    target = page.evaluate(
+        """([lat, lng]) => {
+        const rect = mapInstance.getContainer().getBoundingClientRect();
+        const p = mapInstance.latLngToContainerPoint([lat, lng]);
+        return {x: rect.left + p.x, y: rect.top + p.y};
+    }""",
+        [lat, lng],
+    )
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(target["x"], target["y"], steps=8)
+    page.mouse.up()
+
+
+def _row_count(page, count):
+    page.wait_for_function(
+        "(n) => {const d=document.getElementById('area-selection-dialog');"
+        "return d && d.querySelectorAll('.area-sel-row').length === n;}",
+        arg=count,
+        timeout=10000,
+    )
+
+
+def _bounds(page):
+    return page.evaluate(
+        "() => [areaSelectBounds.getSouth(), areaSelectBounds.getWest(),"
+        " areaSelectBounds.getNorth(), areaSelectBounds.getEast()]")
+
+
+def test_rectangle_resizes_by_its_handles(served_map):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page = browser.new_page()
+            page.goto(served_map)
+            _wait_loaded(page)
+            _drag_box_around_origin(page)
+            # Eight handles: four corners and four sides.
+            assert page.locator(".area-select-handle").count() == 8
+
+            page.locator("#area-selection-dialog input[value='full']").check()
+            _row_count(page, 1)  # Alpha, from [50.000, 14.000] to [50.005, 14.005]
+
+            # The north-east corner in to [50.002, 14.002]: Alpha is no longer fully inside.
+            _drag_handle_to(page, "ne", 50.002, 14.002)
+            _row_count(page, 0)
+            south, west, north, east = _bounds(page)
+            assert south == pytest.approx(49.99, abs=1e-4) and west == pytest.approx(13.99, abs=1e-4)
+            assert north == pytest.approx(50.002, abs=2e-4) and east == pytest.approx(14.002, abs=2e-4)
+
+            # A side handle moves only its side: the east one out to 14.01 ...
+            _drag_handle_to(page, "e", 50.03, 14.01)
+            south2, west2, north2, east2 = _bounds(page)
+            assert (south2, west2, north2) == (south, west, north)
+            assert east2 == pytest.approx(14.01, abs=2e-4)
+            _row_count(page, 0)
+            # ... and the north one out to 50.01: Alpha fits again.
+            _drag_handle_to(page, "n", 50.01, 13.5)
+            _row_count(page, 1)
+            south3, west3, north3, east3 = _bounds(page)
+            assert (south3, west3, east3) == (south2, west2, east2)
+            assert north3 == pytest.approx(50.01, abs=2e-4)
+
+            # The side handles sit in the middle of their sides again.
+            handle = page.locator(".area-select-handle-n").bounding_box()
+            middle = page.evaluate(
+                "() => { const r = mapInstance.getContainer().getBoundingClientRect();"
+                " const p = mapInstance.latLngToContainerPoint([areaSelectBounds.getNorth(),"
+                " areaSelectBounds.getCenter().lng]); return {x: r.left + p.x, y: r.top + p.y}; }")
+            assert abs(handle["x"] + handle["width"] / 2 - middle["x"]) < 2
+            assert abs(handle["y"] + handle["height"] / 2 - middle["y"]) < 2
+
+            # Resizing is not a tap: no popup opened, and the rectangle is still there.
+            assert page.locator(".leaflet-popup").count() == 0
+            # Closing the selection drops the handles with the rectangle.
+            page.locator("#area-sel-close").click()
+            assert page.locator(".area-select-handle").count() == 0
+        finally:
+            browser.close()

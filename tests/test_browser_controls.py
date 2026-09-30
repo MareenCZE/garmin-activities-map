@@ -2,7 +2,8 @@
 
 The date panel heads the top-left stack, with the tiles select and the activity-types
 multiselect under it. The top-right column holds the hamburger, the area-select tool,
-the display-settings gear and the zoom bar; the hamburger folds everything but itself.
+the save-image camera, the display-settings gear and the zoom bar; the hamburger folds
+everything but itself.
 The dropdowns replace Folium's layer control, which stays on the map hidden. Covers
 initializeLayerSelects, initializeDisplaySettings and the layout in
 templates/activity_loader_template.html.
@@ -113,6 +114,7 @@ def test_layout_panels_left_buttons_right(page):
     selects = _box(page, "#map-layer-selects")
     hamburger = _box(page, ".leaflet-control-toggle-menu")
     area = _box(page, "#area-select-bar")
+    camera = _box(page, "#image-export-bar")
     settings = _box(page, "#display-settings-bar")
     zoom = _box(page, ".leaflet-control-zoom")
 
@@ -120,16 +122,18 @@ def test_layout_panels_left_buttons_right(page):
     assert slider["x"] == selects["x"] == 10
     assert slider["y"] + slider["height"] <= selects["y"]
 
-    # Right column, top to bottom: hamburger, area select, settings, a gap, zoom.
+    # Right column, top to bottom: hamburger, area select, save image, settings, a gap, zoom.
     right = page.locator(".leaflet-top.leaflet-right")
-    for selector in (".leaflet-control-toggle-menu", "#area-select-bar", "#display-settings-bar",
-                     ".leaflet-control-zoom"):
+    for selector in (".leaflet-control-toggle-menu", "#area-select-bar", "#image-export-bar",
+                     "#display-settings-bar", ".leaflet-control-zoom"):
         assert right.locator(selector).count() == 1
     assert (hamburger["x"] + hamburger["width"] == area["x"] + area["width"]
-            == settings["x"] + settings["width"] == zoom["x"] + zoom["width"])
+            == camera["x"] + camera["width"] == settings["x"] + settings["width"]
+            == zoom["x"] + zoom["width"])
     assert hamburger["x"] + hamburger["width"] > 1000
     assert hamburger["y"] + hamburger["height"] < area["y"]
-    assert area["y"] + area["height"] < settings["y"]
+    assert area["y"] + area["height"] < camera["y"]
+    assert camera["y"] + camera["height"] < settings["y"]
     assert settings["y"] + settings["height"] < zoom["y"]
     # The date panel ends before the button column.
     assert slider["x"] + slider["width"] <= hamburger["x"]
@@ -140,7 +144,7 @@ def test_layout_panels_left_buttons_right(page):
 
 
 FOLDED = ("#date-range-slider-container", "#map-layer-selects", "#area-select-bar",
-          "#display-settings-bar", ".leaflet-control-zoom")
+          "#image-export-bar", "#display-settings-bar", ".leaflet-control-zoom")
 
 
 def test_hamburger_folds_everything_but_itself(page):

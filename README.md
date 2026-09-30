@@ -73,7 +73,8 @@ of each type.
 
 The rectangle button in the top-right corner turns on area selection. Drag a box on the
 map (with the mouse, or one finger on a touch screen) to list the activities inside it,
-with totals of distance, time and count per category and overall. You can count tracks
+with totals of distance, time and count per category and overall. Drag the handles on
+its corners and sides to resize it; the list follows as you drag. You can count tracks
 that are fully inside the box or just pass through it. Only the activities currently
 shown are counted, and the list updates live as you change the filters. Area selection
 can be turned off with `enable-area-selection = false` under `[activities]`.
@@ -82,26 +83,61 @@ can be turned off with `enable-area-selection = false` under `[activities]`.
 
 ### Saving an image
 
-The bottom of the area-selection dialog saves the rectangle as a PNG with more detail
-than the screen shows. It is drawn again at a higher zoom, as if you zoomed in, took
-several screenshots and joined them. Choose the detail (2×, 4×, … up to the map's
-highest zoom) and press **Save image**. The image shows what the map shows now: the
-background map, the date and type filters, the display settings and any highlighted
-track with its direction. It also carries the map provider's credit, which their terms
-require.
+The camera button in the top-right corner saves the map as a PNG with more detail than
+the screen shows. The image is drawn again at a higher zoom, as if you zoomed in, took
+several screenshots and joined them. It carries the map provider's credit, which their
+terms require. In the panel, choose the **Area**:
 
-- Lines and markers keep their screen width, so they look thinner at more detail. Tick
-  **Enlarge lines with the image** to get an enlargement of the screen instead.
+- **Drawn rectangle**: the rectangle from the area selection (its dialog also has a
+  **Save as image…** button). Choose the detail (2×, 4×, … up to the map's highest zoom).
+  The image shows what the map shows now: the background map, the date and type filters,
+  the display settings and any highlighted track with its direction. Lines and markers
+  keep their screen width, so they look thinner at more detail; tick **Enlarge lines
+  with the image** to get an enlargement of the screen instead.
+- **Transparent background (tracks only)** leaves the map out: the image has only the
+  tracks, so images of the same area and zoom can be laid over each other, e.g. one per
+  year in an image editor. No map tiles are downloaded, so it can go past the map's
+  highest zoom.
+- **A preset**: a fixed area and zoom from your configuration, so images of it are
+  comparable over time, e.g. a yearly image of your city. Its outline shows on the map
+  while it is chosen, and the file is named after it, e.g. `prague-2026-09-30.png`.
+
+Presets are defined in `config-local.toml`. **Copy as preset** in the panel turns the
+drawn rectangle into a ready entry; paste it, give it a name and generate the map again.
+
+```toml
+[[image-presets]]
+name = "Prague"
+bounds = [[49.94, 14.22], [50.18, 14.71]]   # [[south, west], [north, east]]
+zoom = 13
+# Optional; left out, the map's current state is used:
+date-range = "this-year"   # or "all", "last-12-months", "year-2024", ["2024-01-01", "2024-06-30"], ...
+types = ["Running", "Cycling"]
+tiles = "OSM"
+map-opacity = 60           # percent; 0 leaves the map out: tracks on a transparent background
+line-width = 3             # px, instead of the display settings' width
+line-scale = 1.5           # multiplies the line width
+```
+
+Fixing `line-width` and `map-opacity` in a preset makes its images the same whatever
+the display settings of the browser that saves them. For images to lay over each other,
+use `map-opacity = 0`; transparent images get `-transparent` in their file name.
+
+Limits and caveats:
+
 - The map tiles are downloaded again at the chosen zoom, at most 400 per image. Mapy.com
   counts them against your API key's quota like any other tiles.
+- The image size is limited to 50 megapixels (16 on phones and tablets). Larger choices
+  are shown as "too large", and generating the map warns about a preset over the limits.
+  A transparent image has no tiles, so only the size limit applies.
 - Tracks are stored simplified (`coords-simplification-factor`), so from about zoom 15
   they show straight segments while the background map keeps getting sharper.
-- The image size is limited to 50 megapixels (16 on phones and tablets); larger
-  choices are shown as "too large".
+- A preset gives the same area every time, but the background map changes as its
+  provider updates it.
 
 ### Display settings
 
-The gear button under the area-selection button opens the display settings. Use them
+The gear button under the camera button opens the display settings. Use them
 when tracks are hard to see on a busy map, such as Mapy.com Outdoor with its coloured
 trails:
 

@@ -2,6 +2,7 @@
 from typing import List
 import re
 import json
+import math
 import os
 import folium
 import folium.plugins
@@ -182,6 +183,123 @@ def _mapy_com_variant(tile_key):
     return 'basic'  # 'mapy.com-base', bare 'mapy.com', or any unrecognized suffix
 
 
+# The browser's limits for one saved image (IMAGE_EXPORT_* in the template).
+IMAGE_EXPORT_MAX_TILES = 400
+IMAGE_EXPORT_MAX_SIDE = 16384
+IMAGE_EXPORT_MAX_PIXELS = 50_000_000
+# Relative date ranges the page knows (DATE_PRESET_OPTIONS in the template), plus 'year-YYYY'.
+DATE_RANGE_PRESETS = {'all', 'last-30-days', 'last-12-months', 'this-month', 'last-month', 'this-year', 'last-year'}
+ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+def _web_mercator_pixels(lat, lon, zoom):
+    """World pixel coordinates of a point at a zoom level, for 256 px tiles."""
+    scale = 256 * 2 ** zoom
+    x = (lon + 180) / 360 * scale
+    sin_lat = math.sin(math.radians(lat))
+    y = (0.5 - math.log((1 + sin_lat) / (1 - sin_lat)) / (4 * math.pi)) * scale
+    return x, y
+
+
+def image_preset_size(bounds, zoom):
+    """(width, height, tiles) of the image a preset gives, as the page computes it."""
+    (south, west), (north, east) = bounds
+    x0, y0 = (round(v) for v in _web_mercator_pixels(north, west, zoom))
+    x1, y1 = (round(v) for v in _web_mercator_pixels(south, east, zoom))
+    tiles = (math.ceil(x1 / 256) - x0 // 256) * (math.ceil(y1 / 256) - y0 // 256)
+    return x1 - x0, y1 - y0, tiles
+
+
+def _valid_date_range(value):
+    if isinstance(value, str):
+        return value in DATE_RANGE_PRESETS or re.fullmatch(r'year-\d{4}', value) is not None
+    return (isinstance(value, list) and len(value) == 2 and all(isinstance(d, str) and ISO_DATE.match(d) for d in value)
+            and value[0] <= value[1])
+
+
+def _valid_bounds(bounds):
+    try:
+        (south, west), (north, east) = bounds
+        numbers = [float(v) for v in (south, west, north, east)]
+    except (TypeError, ValueError):
+        return False
+    if any(isinstance(v, bool) for v in (south, west, north, east)):
+        return False
+    south, west, north, east = numbers
+    return -85 <= south < north <= 85 and -180 <= west < east <= 180
+
+
+def get_image_presets(category_names):
+    """The [[image-presets]] for the page's "Save image" panel, checked.
+
+    A preset fixes the area and zoom of a saved image, so images of it are
+    comparable. Optional keys fix what is drawn too: date-range, types, tiles,
+    line-width, line-scale and map-opacity (0: no map, a transparent background). A preset with a bad name, bounds or zoom is left out; a bad
+    optional key is dropped, so the page uses the map's current state for it.
+    """
+    tile_names = [tile['name'] for tile in config['map-tiles']['tiles']]
+    presets = []
+    for index, raw in enumerate(config.get('image-presets', [])):
+        name = raw.get('name')
+        label = f"Image preset '{name}'" if name else f"Image preset #{index + 1}"
+        if not isinstance(name, str) or not name.strip():
+            logger.warning(f"{label}: 'name' is missing, skipping it")
+            continue
+        if not _valid_bounds(raw.get('bounds')):
+            logger.warning(f"{label}: 'bounds' must be [[south, west], [north, east]] in degrees, skipping it")
+            continue
+        zoom = raw.get('zoom')
+        if not isinstance(zoom, int) or isinstance(zoom, bool) or not 0 <= zoom <= 22:
+            logger.warning(f"{label}: 'zoom' must be a whole number from 0 to 22, skipping it")
+            continue
+        bounds = [[float(v) for v in corner] for corner in raw['bounds']]
+        preset = {'name': name.strip(), 'bounds': bounds, 'zoom': zoom}
+
+        if 'date-range' in raw:
+            if _valid_date_range(raw['date-range']):
+                preset['date_range'] = raw['date-range']
+            else:
+                logger.warning(f"{label}: 'date-range' must be one of {sorted(DATE_RANGE_PRESETS)}, 'year-YYYY' "
+                               f"or [\"YYYY-MM-DD\", \"YYYY-MM-DD\"]; ignoring it")
+        if 'types' in raw:
+            types = raw['types']
+            unknown = [t for t in types if t not in category_names] if isinstance(types, list) else None
+            if unknown is None:
+                logger.warning(f"{label}: 'types' must be a list of category names; ignoring it")
+            else:
+                if unknown:
+                    logger.warning(f"{label}: unknown types {unknown} are ignored")
+                preset['types'] = [t for t in types if t in category_names]
+        if 'tiles' in raw:
+            if raw['tiles'] in tile_names:
+                preset['tiles'] = raw['tiles']
+            else:
+                logger.warning(f"{label}: 'tiles' must be the name of one of [map-tiles].tiles {tile_names}; ignoring it")
+        for key, low, high, low_included, unit in (('line-width', 0, 20, False, ' px'),
+                                                   ('line-scale', 0, 20, False, ''),
+                                                   ('map-opacity', 0, 100, True, ' %')):
+            if key not in raw:
+                continue
+            value = raw[key]
+            is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
+            if is_number and (low <= value if low_included else low < value) and value <= high:
+                preset[key.replace('-', '_')] = value
+            else:
+                logger.warning(f"{label}: '{key}' must be a number from {low}{unit} "
+                               f"({'inclusive' if low_included else 'exclusive'}) to {high}{unit}; ignoring it")
+
+        width, height, tiles = image_preset_size(bounds, zoom)
+        if preset.get('map_opacity') == 0:
+            tiles = 0  # no map: no tiles to download
+        if (tiles > IMAGE_EXPORT_MAX_TILES or max(width, height) > IMAGE_EXPORT_MAX_SIDE
+                or width * height > IMAGE_EXPORT_MAX_PIXELS):
+            logger.warning(f"{label}: {width} x {height} px ({tiles} tiles) at zoom {zoom} is over the limit of "
+                           f"{IMAGE_EXPORT_MAX_TILES} tiles and {IMAGE_EXPORT_MAX_PIXELS // 1_000_000} megapixels; "
+                           f"the page will not save it. Lower the zoom or shrink the bounds.")
+        presets.append(preset)
+    return presets
+
+
 def create_activity_data_files(activities, output_dir):
     """Create separate JSON files for each activity category and a manifest"""
 
@@ -271,7 +389,8 @@ def create_activity_data_files(activities, output_dir):
         'config': {
             'enable_highlighting': config['activities']['enable-activity-highlighting'],
             'enable_area_selection': config['activities'].get('enable-area-selection', True),
-            'garmin_connect_url': config.get('garmin-connect-activity-url', 'https://connect.garmin.com/modern/activity/')
+            'garmin_connect_url': config.get('garmin-connect-activity-url', 'https://connect.garmin.com/modern/activity/'),
+            'image_presets': get_image_presets(list(manifest_categories)),
         }
     }
 

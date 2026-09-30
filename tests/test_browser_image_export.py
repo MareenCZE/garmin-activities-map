@@ -1,10 +1,11 @@
-"""Headless-browser test for saving a selected rectangle as an image.
+"""Headless-browser test for saving an image of the map.
 
-The selection dialog of a rectangle has a "Save image" footer that redraws the
-rectangle on a canvas at a higher zoom (saveMapImage in
+The camera button's "Save image" panel redraws the drawn rectangle, or a preset
+area from [[image-presets]], on a canvas at a higher zoom (saveMapImage in
 templates/activity_loader_template.html): the base map's tiles for that zoom,
-the tracks that are visible now, and the tile attribution. The tile server is
-faked here with page.route, so no real tiles are downloaded.
+the tracks, and the tile attribution. A preset has a fixed area and zoom and
+may fix the dates and types. The tile server is faked here with page.route, so
+no real tiles are downloaded.
 
 Opt-in: the module skips unless Playwright *and* a Chromium build are installed.
 
@@ -26,6 +27,20 @@ pytest.importorskip("playwright.sync_api")  # skip module if Playwright is absen
 
 import mapgenerator
 import storage
+
+# Presets around the two tracks. "Runs only" fixes the types, "Year 2020" a date
+# range without activities, "Too detailed" a zoom OSM does not have, "Thin" and
+# "Wide" the line width (and "Wide" a half-faded map), and "Tracks only" no map.
+PRESETS = [
+    {"name": "Runs only", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 15, "types": ["Running"]},
+    {"name": "Year 2020", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 15,
+     "date-range": ["2020-01-01", "2020-12-31"]},
+    {"name": "Too detailed", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 21},
+    {"name": "Thin", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 15, "line-width": 1},
+    {"name": "Wide", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 15, "line-width": 4,
+     "map-opacity": 50},
+    {"name": "Tracks only", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 20, "map-opacity": 0},
+]
 
 TILE_RGB = (200, 230, 200)
 
@@ -70,6 +85,7 @@ def served_map(config, tmp_path):
     config["map-tiles"]["zoom-start"] = 14
     config["map-tiles"]["center-point"] = [0.0, 0.005]
     config["activities"]["display-mapping-on-load"] = ["Running", "Cycling"]
+    config["image-presets"] = PRESETS
 
     tracks = [
         _make_track(1, "Easy run", [[0.000, 0.000], [0.000, 0.010]], "running"),
@@ -138,7 +154,8 @@ def _select_box(page):
     page.mouse.down()
     page.mouse.move(box["x2"], box["y2"], steps=8)
     page.mouse.up()
-    page.wait_for_selector("#image-export-save", timeout=10000)
+    page.click("#area-sel-save-image")  # opens the Save image panel on the rectangle
+    page.wait_for_selector("#image-export-dialog:not([hidden])", timeout=10000)
     return box["x2"] - box["x1"], box["y2"] - box["y1"]
 
 
@@ -157,24 +174,41 @@ def _pixel_stats(page, png_bytes):
         ctx.drawImage(img, 0, 0);
         const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
         const near = (i, r, g, b) => Math.abs(d[i] - r) < 30 && Math.abs(d[i + 1] - g) < 30 && Math.abs(d[i + 2] - b) < 30;
-        let tile = 0, running = 0, cycling = 0;
+        let tile = 0, fadedTile = 0, running = 0, cycling = 0, clear = 0, magenta = 0;
+        const columnGreen = [];
         for (let i = 0; i < d.length; i += 4) {
-            if (near(i, 200, 230, 200)) tile++;
+            // The tile, plain and at 50 % over the white ground of a faded map: close
+            // colours, so matched tightly.
+            const exact = (r, g, b) => Math.abs(d[i] - r) < 6 && Math.abs(d[i + 1] - g) < 6 && Math.abs(d[i + 2] - b) < 6;
+            if (exact(200, 230, 200)) tile++;
+            if (exact(228, 243, 228)) fadedTile++;
             // Tracks are 80 % opaque over the tile: magenta and blueviolet blended.
             if (near(i, 244, 46, 244)) running++;
             if (near(i, 150, 82, 221)) cycling++;
+            if (d[i + 3] === 0) clear++;
+            // Magenta at any opacity and over anything, for the transparent images.
+            if (d[i + 3] > 0 && d[i] > 200 && d[i + 1] < 80 && d[i + 2] > 200) magenta++;
+            // Above the attribution, which spans the bottom of a small image.
+            const x = (i / 4) % canvas.width, y = Math.floor(i / 4 / canvas.width);
+            if (x === (canvas.width >> 1) && y < canvas.height - 40) columnGreen.push(d[i + 1]);
         }
-        return {width: img.naturalWidth, height: img.naturalHeight, tile, running, cycling};
+        // Line thickness: how much the (horizontal) tracks darken the middle column's
+        // green below the background, summed. Grows with the width, blur or not.
+        const ground = Math.max(...columnGreen);
+        const inkInColumn = columnGreen.reduce((sum, g) => sum + (ground - g) / ground, 0);
+        return {width: img.naturalWidth, height: img.naturalHeight, tile, fadedTile, running, cycling, clear, magenta,
+                inkInColumn};
     }""",
         data_url,
     )
 
 
-def _save(page, zoom_factor_label):
-    """Pick the option starting with the label, save, and return the downloaded bytes."""
-    select = page.locator("#image-export-zoom")
-    value = select.locator("option", has_text=zoom_factor_label).first.get_attribute("value")
-    select.select_option(value)
+def _save(page, zoom_factor_label=None):
+    """Pick the zoom option with the label (if any), save, and return the downloaded file."""
+    if zoom_factor_label:
+        select = page.locator("#image-export-zoom")
+        value = select.locator("option", has_text=zoom_factor_label).first.get_attribute("value")
+        select.select_option(value)
     with page.expect_download(timeout=20000) as info:
         page.click("#image-export-save")
     with open(info.value.path(), "rb") as fh:
@@ -252,5 +286,178 @@ def test_tiles_that_fail_report_an_error(served_map):
             )
             assert "map tiles could not be loaded" in page.locator("#image-export-status").inner_text()
             assert not page.locator("#image-export-save").is_disabled()
+        finally:
+            browser.close()
+
+
+def _hide_type(page, name):
+    page.click("#type-filter-button")
+    page.locator("#type-filter-menu label", has_text=name).locator("input").click()
+    page.keyboard.press("Escape")
+
+
+def _choose_preset(page, name):
+    page.click(".leaflet-control-image-export")
+    page.wait_for_selector("#image-export-dialog:not([hidden])", timeout=10000)
+    page.locator("#image-export-area").select_option(label=name)
+
+
+def test_preset_has_fixed_area_zoom_and_types(served_map):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page, requested = _open(browser, served_map)
+            # Both types shown and the map zoomed elsewhere: the preset ignores both.
+            page.evaluate("() => mapInstance.setZoom(12)")
+            _choose_preset(page, "Runs only")
+            info = page.locator("#image-export-preset-info").inner_text()
+            assert "zoom 15" in info and "Types: Running" in info and "Dates: as on the map" in info
+            # The zoom choices and the rectangle-only controls give way to the preset's.
+            assert page.locator("#image-export-zoom").is_hidden()
+            assert page.locator("#image-export-copy-preset").is_hidden()
+            # Its area is outlined on the map while the panel is open.
+            assert page.evaluate("() => !!imageExportOutline && mapInstance.hasLayer(imageExportOutline)")
+
+            requested.clear()
+            name, png = _save(page)
+            assert name.startswith("runs-only-") and name.endswith(".png")
+            stats = _pixel_stats(page, png)
+            width, height, _ = mapgenerator.image_preset_size(PRESETS[0]["bounds"], 15)
+            assert (stats["width"], stats["height"]) == (width, height)
+            assert stats["running"] > 0
+            assert stats["cycling"] == 0
+            assert requested and all("/15/" in url for url in requested)
+
+            page.click("#image-export-close")
+            assert page.evaluate("() => imageExportOutline === null")
+        finally:
+            browser.close()
+
+
+def test_preset_follows_the_map_where_it_fixes_nothing(served_map):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page, _ = _open(browser, served_map)
+            # "Year 2020" fixes only the dates (no activities then): nothing is drawn.
+            _choose_preset(page, "Year 2020")
+            assert "Types: as on the map" in page.locator("#image-export-preset-info").inner_text()
+            _, png = _save(page)
+            stats = _pixel_stats(page, png)
+            assert stats["running"] == 0 and stats["cycling"] == 0 and stats["tile"] > 0
+        finally:
+            browser.close()
+
+
+def test_preset_beyond_the_base_map_cannot_be_saved(served_map):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page, _ = _open(browser, served_map)
+            _choose_preset(page, "Too detailed")
+            assert page.locator("#image-export-save").is_disabled()
+            assert "Zoom 21 is more than OSM has (19)" in page.locator("#image-export-status").inner_text()
+        finally:
+            browser.close()
+
+
+def test_copy_rectangle_as_preset(served_map):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page, _ = _open(browser, served_map)
+            _hide_type(page, "Cycling")
+            _select_box(page)
+            zoom = page.locator("#image-export-zoom").input_value()
+            page.click("#image-export-copy-preset")
+            toml = page.locator("#image-export-preset-toml").input_value()
+            lines = toml.splitlines()
+            assert lines[0] == "[[image-presets]]"
+            assert f"zoom = {zoom}" in lines
+            assert "bounds = [[-0.0020, 0.0020], [0.0060, 0.0080]]" in lines
+            # The map's current state, commented out, to fix it if wanted.
+            assert '# date-range = "all"' in lines
+            assert '# types = ["Running"]' in lines
+            assert '# tiles = "OSM"' in lines
+            assert "# line-width = 2" in lines
+            assert "# map-opacity = 100   # 0: no map, transparent background" in lines
+            page.wait_for_function(
+                "() => document.getElementById('image-export-status').textContent.includes('config-local.toml')",
+                timeout=10000,
+            )
+        finally:
+            browser.close()
+
+
+def test_preset_line_width_and_map_opacity(served_map):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page, _ = _open(browser, served_map)
+            _choose_preset(page, "Thin")
+            assert "Lines: 1 px" in page.locator("#image-export-preset-info").inner_text()
+            _, thin_png = _save(page)
+            thin = _pixel_stats(page, thin_png)
+
+            page.locator("#image-export-area").select_option(label="Wide")
+            info = page.locator("#image-export-preset-info").inner_text()
+            assert "Lines: 4 px" in info and "at 50 %" in info
+            _, wide_png = _save(page)
+            wide = _pixel_stats(page, wide_png)
+
+            # Four times the width, whatever the display settings say (2 px): both
+            # horizontal tracks cross the middle column.
+            assert thin["inkInColumn"] > 0
+            assert wide["inkInColumn"] > 3 * thin["inkInColumn"]
+            # The map fades over white; the page's own map opacity (100 %) stays.
+            # (A few anti-aliased line edges can match the other colour.)
+            assert thin["fadedTile"] < thin["tile"] / 100
+            assert wide["tile"] < wide["fadedTile"] / 100
+        finally:
+            browser.close()
+
+
+def test_transparent_background(served_map):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page, requested = _open(browser, served_map)
+            _select_box(page)
+            page.check("#image-export-transparent")
+            assert "no map tiles" in page.locator("#image-export-status").inner_text()
+            # Without tiles to download, zooms past OSM's last one are offered.
+            assert page.locator("#image-export-zoom option").last.get_attribute("value") == "22" or \
+                page.locator("#image-export-zoom option").last.inner_text().endswith("too large")
+            requested.clear()
+            name, png = _save(page, "2× detail")
+            assert name.endswith("-transparent.png")
+            stats = _pixel_stats(page, png)
+            assert stats["tile"] == 0 and stats["clear"] > 0 and stats["magenta"] > 0
+            assert requested == []
+
+            # A preset with map-opacity 0 is transparent whatever the box says, and may
+            # go past the map's last zoom.
+            page.uncheck("#image-export-transparent")
+            page.locator("#image-export-area").select_option(label="Tracks only")
+            box = page.locator("#image-export-transparent")
+            assert box.is_checked() and box.is_disabled()
+            assert "Map: none, transparent background" in page.locator("#image-export-preset-info").inner_text()
+            name, png = _save(page)
+            assert name.startswith("tracks-only-") and name.endswith("-transparent.png")
+            stats = _pixel_stats(page, png)
+            assert stats["clear"] > 0 and stats["magenta"] > 0
+            assert requested == []
         finally:
             browser.close()
