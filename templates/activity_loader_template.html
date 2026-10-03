@@ -26,6 +26,13 @@ let noMapLayer = null;
 // Leaflet internal layer id -> category name
 let layerIdToCategory = {};
 
+// Comparison mode: "?compare" makes this page a shell of two maps side by side, each
+// this page again in an iframe: "?pane=primary" with all the controls, "?pane=secondary"
+// with only its date range. The shell keeps everything but the dates in step.
+const PAGE_PARAMS = new URLSearchParams(location.search);
+const COMPARISON_PANE = window.parent !== window ? PAGE_PARAMS.get('pane') : null;
+const COMPARISON_SHELL = !COMPARISON_PANE && PAGE_PARAMS.has('compare');
+
 // The date filter counts whole calendar days: day N is Date.UTC(...) / DAY_MS.
 // Staying in UTC day numbers keeps timezones and DST from shifting a date by one
 // when it is turned back into the YYYY-MM-DD strings the activities carry.
@@ -650,7 +657,11 @@ async function loadManifest() {
         initializeImageExport();
         initializePresets();
         initializeTapSelection();
+        initializeComparison();
         arrangeTopRightControls();
+        const handoff = takeComparisonHandoff();
+        if (handoff) applyComparisonState(handoff);
+        announceComparisonPane();
 
         // Drawn in manifest order, which keeps the stacking of categories stable
         for (const [categoryName, categoryInfo] of initialCategories) {
@@ -1158,7 +1169,10 @@ function clampDayRange(range, minDay, maxDay) {
     return [Math.max(start, minDay), Math.min(end, maxDay)];
 }
 
+// The second map of a comparison takes its range from the first one when it opens,
+// and neither reads nor changes the remembered preset.
 function loadDatePreset() {
+    if (COMPARISON_PANE === 'secondary') return null;
     try {
         return localStorage.getItem(DATE_PRESET_STORAGE_KEY);
     } catch (e) {
@@ -1167,6 +1181,7 @@ function loadDatePreset() {
 }
 
 function saveDatePreset(presetId) {
+    if (COMPARISON_PANE === 'secondary') return;
     try {
         if (presetId === 'custom') localStorage.removeItem(DATE_PRESET_STORAGE_KEY);
         else localStorage.setItem(DATE_PRESET_STORAGE_KEY, presetId);
@@ -1561,7 +1576,7 @@ function initializeToggleControl() {
 
 /**
  * The top-right column, top to bottom: hamburger, presets, area-select tool, save
- * image, display settings, zoom bar. Leaflet puts the zoom control in the top-left corner by default.
+ * image, display settings, comparison, zoom bar. Leaflet puts the zoom control in the top-left corner by default.
  */
 function arrangeTopRightControls() {
     const corner = mapInstance._controlCorners.topright;
@@ -1572,6 +1587,7 @@ function arrangeTopRightControls() {
         document.getElementById('area-select-bar'),
         document.getElementById('image-export-bar'),
         document.getElementById('display-settings-bar'),
+        document.getElementById('comparison-bar'),
         mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
     ].filter(Boolean);
     column.reverse().forEach(el => corner.prepend(el));
@@ -1582,7 +1598,7 @@ let mapControlsFolded = false;
 function toggleMapControls() {
     // The hamburger folds everything but itself: the top-left corner (date panel,
     // tiles/types dropdowns) and the buttons under it (presets, area select,
-    // save image, display settings, zoom).
+    // save image, display settings, comparison, zoom).
     mapControlsFolded = !mapControlsFolded;
     const folded = [
         mapInstance._controlCorners.topleft,
@@ -1590,6 +1606,7 @@ function toggleMapControls() {
         document.getElementById('area-select-bar'),
         document.getElementById('display-settings-bar'),
         document.getElementById('image-export-bar'),
+        document.getElementById('comparison-bar'),
         mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
     ];
     folded.forEach(function(el) {
@@ -1598,6 +1615,7 @@ function toggleMapControls() {
     const typeMenu = document.getElementById('type-filter-menu');
     if (typeMenu) typeMenu.classList.remove('open');
     if (mapControlsFolded) closeMapDialogs();
+    notifyComparison('fold');
 }
 
 /**
@@ -1699,7 +1717,7 @@ function applyMapOpacity() {
     mapInstance.getContainer().style.background = white ? '#fff' : '';
 }
 
-/** Change some display settings (a preset), as if set in the dialog. */
+/** Change some display settings: from the dialog, a preset or the other map of a comparison. */
 function setDisplaySettings(changes) {
     if ('lineWidth' in changes) displaySettings.lineWidth = clampLineWidth(changes.lineWidth);
     if ('thinLines' in changes) displaySettings.thinLines = !!changes.thinLines;
@@ -1710,6 +1728,7 @@ function setDisplaySettings(changes) {
     applyMapOpacity();
     applyShowDirection();
     syncDisplaySettingsControls();
+    notifyComparison('display');
 }
 
 function syncDisplaySettingsControls() {
@@ -1881,36 +1900,16 @@ function initializeDisplaySettings() {
     L.DomEvent.disableScrollPropagation(dialog);
 
     const widthSlider = dialog.querySelector('#line-width-slider');
-    const widthValue = dialog.querySelector('#line-width-value');
     const thinToggle = dialog.querySelector('#thin-lines-toggle');
     const opacitySlider = dialog.querySelector('#map-opacity-slider');
-    const opacityValue = dialog.querySelector('#map-opacity-value');
     const directionToggle = dialog.querySelector('#show-direction-toggle');
 
     syncDisplaySettingsControls();
 
-    widthSlider.addEventListener('input', function() {
-        displaySettings.lineWidth = clampLineWidth(widthSlider.value);
-        widthValue.textContent = `${displaySettings.lineWidth} px`;
-        saveDisplaySettings();
-        applyTrackLines();
-    });
-    thinToggle.addEventListener('change', function() {
-        displaySettings.thinLines = thinToggle.checked;
-        saveDisplaySettings();
-        applyTrackLines();
-    });
-    opacitySlider.addEventListener('input', function() {
-        displaySettings.mapOpacity = clampMapOpacity(opacitySlider.value);
-        opacityValue.textContent = `${displaySettings.mapOpacity} %`;
-        saveDisplaySettings();
-        applyMapOpacity();
-    });
-    directionToggle.addEventListener('change', function() {
-        displaySettings.showDirection = directionToggle.checked;
-        saveDisplaySettings();
-        applyShowDirection();
-    });
+    widthSlider.addEventListener('input', () => setDisplaySettings({ lineWidth: widthSlider.value }));
+    thinToggle.addEventListener('change', () => setDisplaySettings({ thinLines: thinToggle.checked }));
+    opacitySlider.addEventListener('input', () => setDisplaySettings({ mapOpacity: opacitySlider.value }));
+    directionToggle.addEventListener('change', () => setDisplaySettings({ showDirection: directionToggle.checked }));
     dialog.querySelector('#display-settings-close').onclick = function() {
         setDisplaySettingsOpen(false);
     };
@@ -2080,6 +2079,7 @@ function setAreaSelection(bounds) {
     showSelectionDialog();
     if (imageExportOpen()) resetImageExportStatus();
     if (presetsOpen()) updatePresetsControls();
+    notifyComparison('selection');
 }
 
 function onAreaSelectPointerDown(e) {
@@ -2131,6 +2131,7 @@ function onAreaSelectPointerUp(e) {
     showSelectionDialog();
     if (imageExportOpen()) resetImageExportStatus();
     if (presetsOpen()) updatePresetsControls();
+    notifyComparison('selection');
 }
 
 // ---- Resizing the rectangle -------------------------------------------------
@@ -2195,7 +2196,8 @@ function placeAreaSelectHandles(bounds, except) {
 
 function addAreaSelectHandles() {
     removeAreaSelectHandles();
-    if (!areaSelectBounds) return;
+    // The second map of a comparison shows the first one's selection, not its own.
+    if (!areaSelectBounds || COMPARISON_PANE === 'secondary') return;
     injectAreaSelectHandleStyles();
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     const size = coarse ? 32 : 20;
@@ -2219,6 +2221,7 @@ function addAreaSelectHandles() {
             presetSelectionName = null;  // no longer the preset's area
             placeAreaSelectHandles(bounds, handle);
             refreshSelectionDialogIfOpen();
+            notifyComparison('selection');
         });
         handle.on('dragend', function() {
             // A side handle snaps back to the middle of its side.
@@ -2269,6 +2272,7 @@ function clearSelection() {
     raiseOpenPopupTrack();
     if (imageExportOpen()) resetImageExportStatus();
     if (presetsOpen()) updatePresetsControls();
+    notifyComparison('selection');
 }
 
 // ---- The results dialog ----------------------------------------------------
@@ -2315,6 +2319,9 @@ function showSelectionDialog() {
 
     // The dialog lists either the activities in a rectangle or those near a tap.
     const isArea = !!areaSelectBounds;
+    // On the second map of a comparison a rectangle is the first map's: its
+    // summary shows, its controls (mode, close, save) stay on the first map.
+    const areaControls = isArea && COMPARISON_PANE !== 'secondary';
     let selection = [];
     if (isArea) {
         selection = computeAreaSelection(areaSelectBounds, areaSelectMode);
@@ -2394,7 +2401,7 @@ function showSelectionDialog() {
     const emptyMsg = isArea
         ? '<div style="padding:12px 10px;color:#888;">No visible activities in this area. Try "partially inside", or check the date / type filters.</div>'
         : '<div style="padding:12px 10px;color:#888;">No visible activities here any more. Check the date / type filters.</div>';
-    const modeToggle = isArea ? `
+    const modeToggle = areaControls ? `
         <div style="padding:8px 10px;">
             <label style="margin-right:12px;cursor:pointer;"><input type="radio" name="area-sel-mode" value="partial" ${areaSelectMode === 'partial' ? 'checked' : ''}> Partially inside</label>
             <label style="cursor:pointer;"><input type="radio" name="area-sel-mode" value="full" ${areaSelectMode === 'full' ? 'checked' : ''}> Fully inside</label>
@@ -2403,10 +2410,10 @@ function showSelectionDialog() {
     dialog.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid rgba(0,0,0,0.1);">
             <strong style="font-size:13px;">${isArea ? 'Selection' : 'Activities here'}</strong>
-            <span id="area-sel-close" title="Close" style="cursor:pointer;font-size:16px;line-height:1;color:#666;padding:0 4px;">✕</span>
+            ${isArea && !areaControls ? '' : '<span id="area-sel-close" title="Close" style="cursor:pointer;font-size:16px;line-height:1;color:#666;padding:0 4px;">✕</span>'}
         </div>
         ${modeToggle}
-        <div style="padding:${isArea ? '0' : '8px'} 10px 8px 10px;border-bottom:1px solid rgba(0,0,0,0.1);">
+        <div style="padding:${areaControls ? '0' : '8px'} 10px 8px 10px;border-bottom:1px solid rgba(0,0,0,0.1);">
             <div style="font-weight:bold;margin-bottom:4px;">
                 ${selection.length} activit${selection.length === 1 ? 'y' : 'ies'} · ${totalDistance.toFixed(1)} km · ${formatDuration(totalDuration)}
             </div>
@@ -2415,7 +2422,7 @@ function showSelectionDialog() {
         <div style="overflow-y:auto;">
             ${selection.length ? listRows : emptyMsg}
         </div>
-        ${isArea ? `<div style="padding:8px 10px;border-top:1px solid rgba(0,0,0,0.1);">
+        ${areaControls ? `<div style="padding:8px 10px;border-top:1px solid rgba(0,0,0,0.1);">
             <button type="button" id="area-sel-save-image" style="font-size:12px;cursor:pointer;">Save as image…</button>
         </div>` : ''}
     `;
@@ -2424,7 +2431,8 @@ function showSelectionDialog() {
     L.DomEvent.disableScrollPropagation(dialog);
     placeSelectionDialog();
 
-    dialog.querySelector('#area-sel-close').onclick = clearSelection;
+    const closeButton = dialog.querySelector('#area-sel-close');
+    if (closeButton) closeButton.onclick = clearSelection;
     const saveImageButton = dialog.querySelector('#area-sel-save-image');
     if (saveImageButton) saveImageButton.onclick = () => setImageExportOpen(true);
 
@@ -2432,6 +2440,7 @@ function showSelectionDialog() {
         input.onchange = function() {
             areaSelectMode = this.value;
             showSelectionDialog(); // recompute from the frozen bounds
+            notifyComparison('selection');
         };
     });
 
@@ -3181,6 +3190,16 @@ function tomlString(text) {
     return JSON.stringify(text);  // a TOML basic string has JSON's escapes
 }
 
+/**
+ * The date range as setDateRange takes it: the time-range id while one is chosen
+ * (so "This year" stays relative), else ['YYYY-MM-DD', 'YYYY-MM-DD']; null before the panel.
+ */
+function currentDateRangeSetting() {
+    const presetSelect = document.getElementById('date-range-preset');
+    if (presetSelect && presetSelect.value && presetSelect.value !== 'custom') return presetSelect.value;
+    return currentDateRange ? [currentDateRange.start, currentDateRange.end] : null;
+}
+
 /** The current state, the parts given, as a [[presets]] entry for config-local.toml. */
 function currentStatePresetToml(parts) {
     const f = v => Number(v.toFixed(5));
@@ -3195,13 +3214,11 @@ function currentStatePresetToml(parts) {
         lines.push(`selection = [[${f(b.getSouth())}, ${f(b.getWest())}], [${f(b.getNorth())}, ${f(b.getEast())}]]`);
         if (imageExportZoom != null) lines.push(`image-zoom = ${imageExportZoom}`);
     }
-    if (parts.includes('dates')) {
-        const presetSelect = document.getElementById('date-range-preset');
-        if (presetSelect && presetSelect.value && presetSelect.value !== 'custom') {
-            lines.push(`date-range = ${tomlString(presetSelect.value)}`);
-        } else if (currentDateRange) {
-            lines.push(`date-range = [${tomlString(currentDateRange.start)}, ${tomlString(currentDateRange.end)}]`);
-        }
+    const dateRange = parts.includes('dates') ? currentDateRangeSetting() : null;
+    if (typeof dateRange === 'string') {
+        lines.push(`date-range = ${tomlString(dateRange)}`);
+    } else if (dateRange) {
+        lines.push(`date-range = [${dateRange.map(tomlString).join(', ')}]`);
     }
     if (parts.includes('types')) lines.push(`types = [${shownCategories().map(tomlString).join(', ')}]`);
     if (parts.includes('map')) {
@@ -3472,7 +3489,255 @@ function initializeTapSelection() {
     mapInstance.on('click', onMapTap);
 }
 
+/* ============================================================================
+ * Comparison: two maps side by side (one above the other in portrait) that share
+ * everything but the date range, e.g. to compare two years.
+ *
+ * The page opened with "?compare" is only a shell (initializeComparisonShell): it
+ * drops its own map and shows this page twice, in two iframes of its origin. Each
+ * frame is the whole map with its own viewport, so the layout works unchanged.
+ * The first ("?pane=primary") has all the controls; the second ("?pane=secondary")
+ * shows only its date panel, though it can be panned and zoomed too. A pane
+ * reports which part of its state changed (notifyComparison); the shell reads that
+ * part (comparisonState) and sets it on the other pane (applyComparisonState),
+ * whose resulting events are not reported back. The dates are never passed on,
+ * except once, when the second map opens with the first one's range. A selection
+ * shows on both maps, each with its own summary.
+ *
+ * Each pane loads the data and tiles itself; where the servers let the browser
+ * cache them, the second pane gets them from the cache. The state goes from the single
+ * map to the comparison and back through sessionStorage (takeComparisonHandoff).
+ * ========================================================================== */
+const COMPARISON_HANDOFF_KEY = 'activitiesMap.comparisonHandoff';
+// The parts of the state both maps share; 'dates' is the one they don't.
+const COMPARISON_PARTS = ['view', 'tiles', 'types', 'display', 'selection', 'fold'];
+const COMPARISON_ICON =
+    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+    '<rect x="2.5" y="4.5" width="8.5" height="15" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+    '<rect x="13" y="4.5" width="8.5" height="15" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+
+let comparisonPaneAnnounced = false;  // the shell has this pane's state functions
+let comparisonApplying = false;       // setting the other pane's state: not reported back
+
+/** Tell the shell that a part of this pane's state changed, unless the shell set it. */
+function notifyComparison(part) {
+    if (!COMPARISON_PANE || !comparisonPaneAnnounced || comparisonApplying) return;
+    try {
+        window.parent.onComparisonPaneChange(COMPARISON_PANE, part);
+    } catch (e) {
+        // Not inside a comparison shell (opened with "?pane=" by hand).
+    }
+}
+
+/** The parts given of this map's state, as plain data. */
+function comparisonState(parts) {
+    const state = {};
+    if (parts.includes('view')) {
+        const c = mapInstance.getCenter();
+        state.center = [c.lat, c.lng];
+        state.zoom = mapInstance.getZoom();
+    }
+    if (parts.includes('tiles')) state.tiles = baseLayerName(activeBaseLayer());
+    if (parts.includes('types')) state.types = shownCategories();
+    if (parts.includes('display')) state.display = Object.assign({}, displaySettings);
+    if (parts.includes('selection')) {
+        const b = areaSelectBounds;
+        state.selection = b ? [[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]] : null;
+        state.selection_mode = areaSelectMode;
+    }
+    if (parts.includes('dates')) state.date_range = currentDateRangeSetting();
+    if (parts.includes('fold')) state.folded = mapControlsFolded;
+    return state;
+}
+
+/** Whether the map already shows this view (to the pixel), so setting it can be skipped. */
+function isCurrentView(center, zoom) {
+    if (Math.abs(zoom - mapInstance.getZoom()) > 1e-6) return false;
+    const wanted = mapInstance.project(L.latLng(center), zoom);
+    return wanted.distanceTo(mapInstance.project(mapInstance.getCenter(), zoom)) < 0.5;
+}
+
+/** Show the other map's selection: a new one is drawn, a resized one moves along. */
+function applyComparisonSelection(selection) {
+    if (!selection) {
+        if (areaSelectBounds) clearSelection();
+        return;
+    }
+    if (manifest.config && manifest.config.enable_area_selection === false) return;
+    const bounds = L.latLngBounds(selection);
+    if (areaSelectBounds && areaSelectBounds.equals(bounds)) return;
+    if (areaSelectBounds && areaSelectRectangle) {
+        areaSelectRectangle.setBounds(bounds);
+        areaSelectBounds = bounds;
+        presetSelectionName = null;
+        placeAreaSelectHandles(bounds);
+        refreshSelectionDialogIfOpen();
+        if (imageExportOpen()) resetImageExportStatus();
+    } else {
+        setAreaSelection(bounds);
+    }
+}
+
+/** Set what the state has (from comparisonState), through the controls' own setters. */
+function applyComparisonState(state) {
+    comparisonApplying = true;
+    try {
+        if (state.tiles) setBaseLayer(state.tiles);
+        if (state.display) setDisplaySettings(state.display);
+        if (state.types) {
+            Object.keys(layerGroups).forEach(name => setCategoryShown(name, state.types.includes(name)));
+        }
+        if (state.date_range) setDateRange(state.date_range);
+        if (state.center && !isCurrentView(state.center, state.zoom)) {
+            mapInstance.setView(state.center, state.zoom, { animate: false });
+        }
+        if (state.selection_mode && state.selection_mode !== areaSelectMode) {
+            areaSelectMode = state.selection_mode;
+            refreshSelectionDialogIfOpen();
+        }
+        if ('selection' in state) applyComparisonSelection(state.selection);
+        if ('folded' in state && state.folded !== mapControlsFolded) toggleMapControls();
+    } finally {
+        comparisonApplying = false;
+    }
+}
+
+/** Pass the state to the page opened next in this tab (entering or leaving a comparison). */
+function handOverComparisonState(state) {
+    try {
+        sessionStorage.setItem(COMPARISON_HANDOFF_KEY, JSON.stringify(state));
+    } catch (e) {
+        // Storage blocked: the next page starts as it would anyway.
+    }
+}
+
+/** The state handed over by the page before, once; the second map of a comparison takes none. */
+function takeComparisonHandoff() {
+    if (COMPARISON_PANE === 'secondary') return null;
+    try {
+        const text = sessionStorage.getItem(COMPARISON_HANDOFF_KEY);
+        sessionStorage.removeItem(COMPARISON_HANDOFF_KEY);
+        return text ? JSON.parse(text) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function openComparison() {
+    handOverComparisonState(comparisonState([...COMPARISON_PARTS, 'dates']));
+    location.assign(`${location.pathname}?compare`);
+}
+
+/** Back to a single map, as the first map of the comparison was. */
+function closeComparison() {
+    handOverComparisonState(comparisonState([...COMPARISON_PARTS, 'dates']));
+    window.parent.location.assign(window.parent.location.pathname);
+}
+
+/**
+ * A pane's part: report the map's changes and, on a single map or the first map of
+ * a comparison, the button that opens or closes it. The second map of a comparison
+ * hides every control but its date panel.
+ */
+function initializeComparison() {
+    if (!mapInstance) return;
+    mapInstance.on('move zoomend', () => notifyComparison('view'));
+    mapInstance.on('baselayerchange', () => notifyComparison('tiles'));
+    mapInstance.on('overlayadd overlayremove', () => notifyComparison('types'));
+
+    if (COMPARISON_PANE === 'secondary') {
+        const style = document.createElement('style');
+        style.textContent = `
+            #map-layer-selects,
+            .leaflet-top.leaflet-right { display: none !important; }
+            #date-range-slider-container { width: calc(100vw - 20px) !important; }
+            #area-selection-dialog { right: 10px !important; max-width: calc(100vw - 20px) !important; }
+        `;
+        document.head.appendChild(style);
+        return;
+    }
+
+    const inComparison = COMPARISON_PANE === 'primary';
+    addPanelButton('comparison-bar', 'leaflet-control-comparison',
+                   inComparison ? 'Close the comparison' : 'Compare two date ranges side by side',
+                   COMPARISON_ICON, inComparison ? closeComparison : openComparison);
+    const button = document.querySelector('.leaflet-control-comparison');
+    button.removeAttribute('aria-haspopup');
+    button.removeAttribute('aria-expanded');
+    button.setAttribute('aria-pressed', String(inComparison));
+    if (inComparison) button.style.backgroundColor = 'rgba(207, 232, 255, 0.9)';
+}
+
+/** Hand the shell this pane's state functions, once the map and its controls are set up. */
+function announceComparisonPane() {
+    if (!COMPARISON_PANE) return;
+    comparisonPaneAnnounced = true;
+    try {
+        window.parent.onComparisonPaneReady(COMPARISON_PANE, { state: comparisonState, apply: applyComparisonState });
+    } catch (e) {
+        console.warn('Not inside a comparison shell:', e);
+    }
+}
+
+// ---- The shell ("?compare") -------------------------------------------------
+
+const comparisonPanes = {};  // 'primary' / 'secondary' -> { state, apply }, once ready
+
+function initializeComparisonShell() {
+    const style = document.createElement('style');
+    style.textContent = `
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #fff; }
+        .folium-map { display: none !important; }
+        /* Two maps of the same size, so the same centre and zoom show the same area. */
+        #comparison { position: fixed; inset: 0; display: flex; gap: 2px; background: #888; }
+        #comparison iframe { flex: 1 1 0; min-width: 0; min-height: 0; border: 0; background: #fff; }
+        @media (orientation: portrait) {
+            #comparison { flex-direction: column; }
+        }
+    `;
+    document.head.appendChild(style);
+
+    const container = document.createElement('div');
+    container.id = 'comparison';
+    [['primary', 'Map'], ['secondary', 'Map to compare']].forEach(function([role, title]) {
+        const frame = document.createElement('iframe');
+        frame.id = `comparison-${role}`;
+        frame.title = title;
+        frame.src = `${location.pathname}?pane=${role}`;
+        container.appendChild(frame);
+    });
+    document.body.appendChild(container);
+
+    // The shell's own (hidden) map is not used.
+    waitForMap().then(map => { if (map) map.remove(); });
+}
+
+/** A pane is set up. Once both are, the second map takes the first one's state, dates included. */
+function onComparisonPaneReady(role, pane) {
+    comparisonPanes[role] = pane;
+    const { primary, secondary } = comparisonPanes;
+    if (primary && secondary) secondary.apply(copyComparisonState(primary.state([...COMPARISON_PARTS, 'dates'])));
+}
+
+/** A part of a pane's state changed: set it on the other pane. */
+function onComparisonPaneChange(role, part) {
+    const { primary, secondary } = comparisonPanes;
+    if (!primary || !secondary || !COMPARISON_PARTS.includes(part)) return;
+    const [from, to] = role === 'primary' ? [primary, secondary] : [secondary, primary];
+    to.apply(copyComparisonState(from.state([part])));
+}
+
+/** Plain data, so no pane holds on to objects of the other pane's window. */
+function copyComparisonState(state) {
+    return JSON.parse(JSON.stringify(state));
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    if (COMPARISON_SHELL) {
+        console.log('DOM loaded, setting up the comparison...');
+        initializeComparisonShell();
+        return;
+    }
     console.log('DOM loaded, starting activity loader...');
     loadManifest();
 });

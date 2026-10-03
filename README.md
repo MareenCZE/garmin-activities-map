@@ -25,6 +25,8 @@ and which are still waiting for you.
   and descent, with a link to Garmin Connect.
 - **Selection tools.** Click where tracks overlap to list them, or draw a rectangle to
   list and total everything inside it.
+- **Comparison.** Two maps side by side, each with its own date range, e.g. to compare
+  two years.
 - **Works on desktop and mobile.** Mouse and touch input are both supported.
 - **Publishing.** The map is a set of static files that can be uploaded to any web host
   over FTPS, incrementally.
@@ -167,6 +169,24 @@ trails:
   on or off.
 
 The browser remembers these settings.
+
+### Comparing two date ranges
+
+The button with two panes, under the gear button, splits the page into two maps side by
+side (one above the other on a phone held upright), e.g. to compare this year with last
+year. Both start with the current date range; change either one's dates on its own panel.
+Everything else is shared: the view, the activity types, the background map, the display
+settings and the area selection. The first map has all the controls; the second has only
+its date panel, but you can pan and zoom either one and the other follows.
+
+A selection shows on both maps, each with its list and totals for its own dates. Presets
+apply to the first map, and a preset's date range changes only the first map's dates.
+The same button, highlighted while comparing, goes back to a single map with the first
+map's settings.
+
+Each map loads its own copy of the activity data, so comparing needs about twice the
+memory. Each map also requests its own tiles; the browser's cache usually serves the
+second map's tiles, unless the tile server forbids caching.
 
 ## Getting started
 
@@ -409,6 +429,3 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
   `garminconnect`), which is being retired, so login needs to move to its successor.
 - **Installer.** Replace the manual installation steps in this README (venv,
   `pip install`, first configuration) with an installer script.
-- **Comparison mode.** Two maps side by side that share every setting (view, zoom,
-  activity types, base map, display settings) except the date range, e.g. to compare
-  two years. A selection shows on both maps, each with its own summary.

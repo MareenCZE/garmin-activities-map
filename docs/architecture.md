@@ -236,7 +236,7 @@ becomes a polyline in its category colour.
 - **Layout.** The top-left corner holds the date-range panel with the background and
   activity-type selectors below it. The top-right column holds a menu button, the
   presets button, the area-selection button, the save-image button, the display-settings
-  button and the zoom bar (`arrangeTopRightControls`); the menu button hides and shows all
+  button, the comparison button and the zoom bar (`arrangeTopRightControls`); the menu button hides and shows all
   the other controls. The presets, save-image and display-settings panels share a place
   left of the column, so opening one closes the others (`closeMapDialogs`).
 - **Display settings** (`initializeDisplaySettings`). The gear button opens a dialog
@@ -403,6 +403,45 @@ valid to set, is left out; a bad or unknown key is dropped with a warning; a sel
 whose image at `image-zoom` is over the limits (`image_size`, computed like the page
 does; no tile limit with `tiles = "No map"`) is kept with a warning. A leftover
 `[[image-presets]]` section is reported, not converted.
+
+### Comparison mode
+
+The comparison button (`initializeComparison`) opens the page again as
+`activities_map.html?compare`. That page is only a shell (`initializeComparisonShell`):
+it removes its own map and shows the page twice, in two iframes of the same origin,
+`?pane=primary` and `?pane=secondary` (`COMPARISON_PANE`). They sit side by side, or one
+above the other in portrait, at the same size, so the same centre and zoom show the same
+area. Each frame is the whole map with its own viewport, so no layout code needed to
+change. The second pane hides every control but its date panel, and has no selection
+handles. Its selection dialog shows only the summary: the mode switch, close and save
+buttons stay on the first map.
+
+The shell keeps the panes in step: everything but the dates. A pane reports a change with
+`notifyComparison(part)`. The parts are `view` (`move`/`zoomend`), `tiles`
+(`baselayerchange`), `types` (`overlayadd`/`overlayremove`), `display`
+(`setDisplaySettings`, which the dialog now goes through too), `selection` (drawn, resized,
+cleared or its mode changed) and `fold` (`toggleMapControls`). The shell
+(`onComparisonPaneChange`) reads that part of the pane's state (`comparisonState`) and sets
+it on the other pane (`applyComparisonState`), through the controls' own setters. Changes
+made while applying are not reported back (`comparisonApplying`), and a view the map
+already shows is not set again, so the panes don't echo each other. The functions are
+reached directly, as the frames share the shell's origin. Top-level `let` variables are
+not properties of `window`, so each pane hands the shell its `state`/`apply` functions in
+`announceComparisonPane`.
+
+The dates are passed on only once: when both panes are ready (`onComparisonPaneReady`),
+the second takes the first one's whole state, its date range included. The second pane
+neither reads nor saves the remembered date preset. A preset applied on the first map
+changes its own dates, and its other parts reach the second map as ordinary changes.
+
+The state goes from the single map into the comparison and back through
+`sessionStorage` (`handOverComparisonState`, `takeComparisonHandoff`, read once after the
+controls are set up): opening the comparison passes the single map's state to the first
+pane, and closing it passes the first pane's state to the single map.
+
+Each pane loads its own copy of the activity data and draws its own tracks, so a
+comparison needs about twice the memory. The second pane's data files and tiles come from
+the browser's cache where the servers allow it.
 
 ### Mapy.com logo
 

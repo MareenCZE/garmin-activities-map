@@ -54,6 +54,9 @@ python -m pytest tests/test_browser_*.py
 - `test_cli.py` — command-line options overriding the `[mode]` config
 - `test_browser_mapy.py` — headless-Chromium check of the Mapy.com logo toggle
   (opt-in; see above)
+- `test_browser_comparison.py` — headless-Chromium checks of comparison mode: the two
+  maps keep everything but their dates in step, a selection shows on both with its own
+  summary, and closing returns to one map; opt-in like the one above
 - `test_browser_area_select.py`, `test_browser_tap_select.py` — headless-Chromium
   checks of the rectangle selection tool (drawing and resizing, by mouse and touch)
   and the click/tap picker (touch and mouse tolerance, overlapping-track list); opt-in
