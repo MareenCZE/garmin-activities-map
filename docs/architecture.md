@@ -235,8 +235,10 @@ becomes a polyline in its category colour.
 
 - **Layout.** The top-left corner holds the date-range panel with the background and
   activity-type selectors below it. The top-right column holds a menu button, the
-  area-selection button, the save-image button, the display-settings button and the zoom bar
-  (`arrangeTopRightControls`); the menu button hides and shows all the other controls.
+  presets button, the area-selection button, the save-image button, the display-settings
+  button and the zoom bar (`arrangeTopRightControls`); the menu button hides and shows all
+  the other controls. The presets, save-image and display-settings panels share a place
+  left of the column, so opening one closes the others (`closeMapDialogs`).
 - **Display settings** (`initializeDisplaySettings`). The gear button opens a dialog
   with four settings, all remembered in `localStorage` (`activitiesMap.displaySettings`).
   *Line width* sets the track width, 1–5 px in 0.5 px steps (default 2 px, opacity 0.8).
@@ -251,8 +253,11 @@ becomes a polyline in its category colour.
 - **Background and activity types** (`initializeLayerSelects`). A `<select>` picks the
   background map, and a multi-select dropdown with counts and All/None shortcuts picks
   the categories. Folium's layer control stays on the page, hidden; the two selectors
-  drive it, so its `baselayerchange`/`overlayadd`/`overlayremove` events keep lazy
-  loading and both selectors in sync.
+  drive it (`setBaseLayer`, `setCategoryShown`), so its `baselayerchange`/`overlayadd`/
+  `overlayremove` events keep lazy loading and both selectors in sync. The page adds a
+  *No map* background (`noMapLayer`, an empty `L.gridLayer`) that the control does not
+  list, so `setBaseLayer` fires its `baselayerchange` itself; `applyMapOpacity` gives it
+  a white ground.
 - **Date range** (`initializeDateRangeSlider`). A noUiSlider, a preset selector and two
   date inputs, kept in sync, filter the visible tracks. Presets cover all time, the last
   30 days, the last 12 months, this and last month, this and last year, and every year
@@ -340,56 +345,64 @@ on the map, so it follows the date and category filters, and it is recalculated
 ### Saving an image
 
 The camera button (`initializeImageExport`) opens the "Save image" panel, a
-`.map-dialog` like the display settings; opening one closes the other, and the
-selection dialog is hidden while the panel is open (`placeSelectionDialog`). Its
-**Area** is the drawn rectangle or one of the presets. A page cannot screenshot
-itself, so the area is drawn again on a canvas (`saveMapImage`, which takes a job of
-bounds, zoom, base layer, line scale, file name and tracks):
+`.map-dialog` like the display settings; the selection dialog is hidden while it or the
+presets panel is open (`placeSelectionDialog`). It saves the area selection, or the
+current view when there is none (`imageExportBounds`; the panel follows the map's
+`moveend`). A page cannot screenshot itself, so the area is drawn again on a canvas
+(`saveMapImage`, which takes a job from `imageExportJob` of bounds, zoom, base layer,
+transparency, map opacity, line scale, file name and tracks).
 
-- **Rectangle** (`rectangleExportJob`): the zoom is chosen from the current one up to
-  the base map's `maxNativeZoom` (`imageExportChoices`). The tracks are the polylines on
-  the map (`rectangleTracks`, from `collectVisibleActivities`), so the date and type
-  filters apply, in their SVG paint order and with their current `options` (display
-  settings, highlight). Highlighted tracks get chevrons (`directionChevronArms`, shared
-  with `buildDirectionChevrons`) and start/finish markers (`trackEnds`, drawn to match
-  the CSS markers). *Enlarge lines with the image* scales lines, markers and the
-  attribution by the zoom factor. *Copy as preset* (`rectanglePresetToml`) gives the
-  rectangle as a `[[image-presets]]` entry, with the map's current filters, line width
-  and map opacity commented out.
-- **Preset** (`presetExportJob`): area and zoom come from the preset, and its outline is
-  shown while chosen. Its tracks are read from the activity data (`presetTracks`,
-  loading categories that are not shown yet) rather than from the map, so its own
-  `date_range`, `types`, `tiles`, `line_width` (passed to `trackStyle`) and
-  `map_opacity` apply; what it leaves out follows the map and the display settings.
-  Nothing is highlighted, so its images stay comparable. `line_scale` multiplies the
-  line width.
+The zoom is chosen from the current one up to the base map's `maxNativeZoom`
+(`imageExportChoices`); a lower zoom already chosen (a preset's `image-zoom`) is offered
+too. The tracks are the polylines on the map (`rectangleTracks`, from
+`collectVisibleActivities`), so the date and type filters apply, in their SVG paint
+order and with their current `options` (display settings, highlight). Highlighted
+tracks get chevrons (`directionChevronArms`, shared with `buildDirectionChevrons`) and
+start/finish markers (`trackEnds`, drawn to match the CSS markers). *Enlarge lines with
+the image* scales lines, markers and the attribution by the zoom factor. The file is
+named after the preset whose selection is saved (`presetSelectionName`, dropped when
+the selection is redrawn, resized or cleared), else `activities-map-…`.
 
-A job's `mapOpacity` of 0 means a transparent background: *Transparent background* in
-the panel, or a preset's `map_opacity = 0`, which also ticks and locks the box. The map
-is then left out entirely: no ground colour, no tiles, and no attribution, as no map is
-shown. Without tiles to download, the tile limit and the base map's last zoom do not
-apply; the zoom list goes up to `IMAGE_EXPORT_MAX_ZOOM_WITHOUT_MAP` (22) and only the
-image size limits it. Otherwise the ground is Leaflet's grey, or white under a faded
-map, as `applyMapOpacity` does on screen.
+With *No map* as the base map the job is transparent: the map is left out entirely: no
+ground colour, no tiles, and no attribution, as no map is shown. Without tiles to
+download, the tile limit and the base map's last zoom do not apply; the zoom list goes
+up to `IMAGE_EXPORT_MAX_ZOOM_WITHOUT_MAP` (22) and only the image size limits it.
+Otherwise the ground is Leaflet's grey, or white under a faded map, as `applyMapOpacity`
+does on screen.
 
-The zoom list and the presets are bounded by the same limits: more than
-`IMAGE_EXPORT_MAX_TILES` (400) tiles (with a map), a side over 16384 px, or over 50 (touch devices:
-16) megapixels cannot be saved. The image is drawn in the map's order: the container
-background, the tiles for that zoom at the map opacity (`exportTileUrl` follows
-`L.TileLayer.getTileUrl`), the tracks, then the base layer's attribution in the
-lower-right corner and, on Mapy.com tiles, the Mapy.com logo above it. Tiles are loaded
-with `crossOrigin = 'anonymous'` so the canvas stays readable: OSM and CARTO send
-`Access-Control-Allow-Origin: *`, Mapy.com echoes the page's origin (with
-`Vary: Origin`, so tiles cached for the map are not reused without it). A tile from a
-server without CORS fails like one that does not load; failed tiles stay blank and are
-counted in the status line, and nothing is saved when all fail. The PNG is downloaded
-through an object URL.
+The zoom list is bounded by these limits: more than `IMAGE_EXPORT_MAX_TILES` (400) tiles
+(with a map), a side over 16384 px, or over 50 (touch devices: 16) megapixels cannot be
+saved. The image is drawn in the map's order: the container background, the tiles for
+that zoom at the map opacity (`exportTileUrl` follows `L.TileLayer.getTileUrl`), the
+tracks, then the base layer's attribution in the lower-right corner and, on Mapy.com
+tiles, the Mapy.com logo above it. Tiles are loaded with `crossOrigin = 'anonymous'` so
+the canvas stays readable: OSM and CARTO send `Access-Control-Allow-Origin: *`, Mapy.com
+echoes the page's origin (with `Vary: Origin`, so tiles cached for the map are not
+reused without it). A tile from a server without CORS fails like one that does not
+load; failed tiles stay blank and are counted in the status line, and nothing is saved
+when all fail. The PNG is downloaded through an object URL.
 
-Presets come from `[[image-presets]]` in the config. `mapgenerator.get_image_presets`
-checks them and puts them into `manifest.json` (`config.image_presets`): a preset with a
-bad name, bounds or zoom is left out, a bad optional key is dropped with a warning, and
-a preset over the limits (computed by `image_preset_size` like the page does; no tile
-limit with `map-opacity = 0`) is kept with a warning.
+### Presets
+
+The bookmark button (`initializePresets`) opens the presets panel. Each preset from
+`[[presets]]` is a button showing what it sets (`describePreset`); `applyMapPreset`
+applies only the keys the preset has (closing the panel, so the selection dialog shows),
+through the same setters as the controls:
+`setBaseLayer` (`tiles`), `setDisplaySettings` (`map_opacity`, `line_width`,
+`thin_lines`, `show_direction`; saved and shown in the dialog like a change made there),
+`setCategoryShown` (`types`), `setDateRange` (`date_range`, set up by the date panel; a
+year without data becomes a custom range), `setView` (`center`, `zoom`),
+`setAreaSelection` (`selection`, fitted into view when the preset sets no view) and
+`imageExportZoom` (`image_zoom`). *New preset from the current state*
+(`currentStatePresetToml`) writes the ticked parts (`PRESET_PARTS`) as a `[[presets]]`
+entry, copied to the clipboard where allowed.
+
+`mapgenerator.get_presets` checks the presets and puts them into `manifest.json`
+(`config.presets`, keys with underscores): a preset without a name, or with nothing
+valid to set, is left out; a bad or unknown key is dropped with a warning; a selection
+whose image at `image-zoom` is over the limits (`image_size`, computed like the page
+does; no tile limit with `tiles = "No map"`) is kept with a warning. A leftover
+`[[image-presets]]` section is reported, not converted.
 
 ### Mapy.com logo
 

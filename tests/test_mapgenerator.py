@@ -221,98 +221,123 @@ class TestBuildTileLayer:
         assert mapgenerator._mapy_com_variant(tile_key) == expected
 
 
-class TestImagePresets:
+class TestPresets:
     CATEGORIES = ["Other", "Running", "Cycling"]
     BOUNDS = [[-0.5, -0.5], [0.5, 0.5]]
 
     @pytest.fixture
     def tiles_config(self, config):
         config["map-tiles"]["tiles"] = [{"tiles": "OpenStreetMap", "name": "OSM"}]
+        # The shared config includes config-local.toml: none of its presets here.
+        config.pop("image-presets", None)
+        config.pop("presets", None)
         return config
 
     def test_none_configured(self, tiles_config):
-        tiles_config.pop("image-presets", None)
-        assert mapgenerator.get_image_presets(self.CATEGORIES) == []
+        tiles_config.pop("presets", None)
+        assert mapgenerator.get_presets(self.CATEGORIES) == []
 
     def test_full_preset_is_passed_on(self, tiles_config):
-        tiles_config["image-presets"] = [{
-            "name": " Null Island ", "bounds": [[-1, -1], [1, 1]], "zoom": 5, "date-range": "this-year",
-            "types": ["Running"], "tiles": "OSM", "line-width": 3, "line-scale": 1.5, "map-opacity": 60,
+        tiles_config["presets"] = [{
+            "name": " Null Island ", "center": [0.1, -0.2], "zoom": 12.5, "selection": [[-1, -1], [1, 1]],
+            "image-zoom": 5, "date-range": "this-year", "types": ["Running"], "tiles": "OSM", "map-opacity": 60,
+            "line-width": 3, "thin-lines": True, "show-direction": False,
         }]
-        assert mapgenerator.get_image_presets(self.CATEGORIES) == [{
-            "name": "Null Island", "bounds": [[-1.0, -1.0], [1.0, 1.0]], "zoom": 5, "date_range": "this-year",
-            "types": ["Running"], "tiles": "OSM", "line_width": 3, "line_scale": 1.5, "map_opacity": 60,
+        assert mapgenerator.get_presets(self.CATEGORIES) == [{
+            "name": "Null Island", "center": [0.1, -0.2], "zoom": 12.5, "selection": [[-1, -1], [1, 1]],
+            "image_zoom": 5, "date_range": "this-year", "types": ["Running"], "tiles": "OSM", "map_opacity": 60,
+            "line_width": 3, "thin_lines": True, "show_direction": False,
         }]
+
+    def test_any_single_key_makes_a_preset(self, tiles_config):
+        tiles_config["presets"] = [{"name": "Dates", "date-range": "all"}, {"name": "Map", "tiles": "No map"}]
+        assert mapgenerator.get_presets(self.CATEGORIES) == [
+            {"name": "Dates", "date_range": "all"}, {"name": "Map", "tiles": "No map"}]
+
+    def test_bad_tiles_are_dropped(self, tiles_config, caplog):
+        tiles_config["presets"] = [{"name": "A", "zoom": 5, "tiles": "Satellite"}]
+        assert mapgenerator.get_presets(self.CATEGORIES) == [{"name": "A", "zoom": 5}]
+        assert "'tiles'" in caplog.text
 
     @pytest.mark.parametrize("preset", [
-        {"bounds": BOUNDS, "zoom": 5},                                   # no name
-        {"name": "A", "bounds": [[0.5, -0.5], [-0.5, 0.5]], "zoom": 5},  # south above north
-        {"name": "A", "bounds": [[-0.5, -0.5]], "zoom": 5},              # one corner
-        {"name": "A", "bounds": BOUNDS, "zoom": 5.5},                    # fractional zoom
-        {"name": "A", "bounds": BOUNDS},                                 # no zoom
+        {"zoom": 5},                    # no name
+        {"name": " ", "zoom": 5},       # blank name
+        {"name": "A"},                  # sets nothing
+        {"name": "A", "zoom": 30},      # sets nothing valid
     ])
-    def test_bad_required_key_skips_preset(self, tiles_config, preset):
-        tiles_config["image-presets"] = [preset]
-        assert mapgenerator.get_image_presets(self.CATEGORIES) == []
+    def test_preset_without_name_or_content_is_skipped(self, tiles_config, preset, caplog):
+        tiles_config["presets"] = [preset]
+        assert mapgenerator.get_presets(self.CATEGORIES) == []
+        assert "skipping it" in caplog.text
 
     @pytest.mark.parametrize("key, value", [
+        ("center", [91, 0]),
+        ("center", [0]),
+        ("center", ["0", "0"]),
+        ("zoom", -1),
+        ("zoom", True),
+        ("selection", [[0.5, -0.5], [-0.5, 0.5]]),  # south above north
+        ("selection", [[-0.5, -0.5]]),               # one corner
+        ("image-zoom", 5.5),
         ("date-range", "next-year"),
         ("date-range", ["2024-06-01", "2024-01-01"]),
-        ("tiles", "Satellite"),
         ("types", "Running"),
-        ("line-scale", 0),
         ("line-width", 0),
         ("line-width", "2"),
+        ("map-opacity", 0),
         ("map-opacity", 101),
-        ("map-opacity", -1),
         ("map-opacity", True),
+        ("thin-lines", "yes"),
+        ("show-direction", 1),
+        ("bounds", BOUNDS),  # the old [[image-presets]] key
     ])
-    def test_bad_optional_key_is_dropped(self, tiles_config, key, value):
-        tiles_config["image-presets"] = [{"name": "A", "bounds": self.BOUNDS, "zoom": 5, key: value}]
-        assert mapgenerator.get_image_presets(self.CATEGORIES) == [
-            {"name": "A", "bounds": self.BOUNDS, "zoom": 5}]
+    def test_bad_or_unknown_key_is_dropped(self, tiles_config, key, value, caplog):
+        tiles_config["presets"] = [{"name": "A", "tiles": "OSM", key: value}]
+        assert mapgenerator.get_presets(self.CATEGORIES) == [{"name": "A", "tiles": "OSM"}]
+        assert f"'{key}'" in caplog.text
 
     @pytest.mark.parametrize("date_range", ["all", "year-2024", ["2024-01-01", "2024-06-30"]])
     def test_date_range_forms(self, tiles_config, date_range):
-        tiles_config["image-presets"] = [{"name": "A", "bounds": self.BOUNDS, "zoom": 5, "date-range": date_range}]
-        assert mapgenerator.get_image_presets(self.CATEGORIES)[0]["date_range"] == date_range
+        tiles_config["presets"] = [{"name": "A", "date-range": date_range}]
+        assert mapgenerator.get_presets(self.CATEGORIES)[0]["date_range"] == date_range
 
     def test_unknown_types_are_dropped(self, tiles_config):
-        tiles_config["image-presets"] = [{"name": "A", "bounds": self.BOUNDS, "zoom": 5,
-                                          "types": ["Running", "Swimming"]}]
-        assert mapgenerator.get_image_presets(self.CATEGORIES)[0]["types"] == ["Running"]
+        tiles_config["presets"] = [{"name": "A", "types": ["Running", "Swimming"]}]
+        assert mapgenerator.get_presets(self.CATEGORIES)[0]["types"] == ["Running"]
 
-    def test_too_large_preset_is_kept_with_a_warning(self, tiles_config, caplog):
-        tiles_config["image-presets"] = [{"name": "Huge", "bounds": [[-40, -80], [40, 80]], "zoom": 8}]
-        presets = mapgenerator.get_image_presets(self.CATEGORIES)
+    def test_old_image_presets_are_reported(self, tiles_config, caplog):
+        tiles_config["image-presets"] = [{"name": "Old", "bounds": self.BOUNDS, "zoom": 5}]
+        assert mapgenerator.get_presets(self.CATEGORIES) == []
+        assert "[[image-presets]] is now [[presets]]" in caplog.text
+
+    def test_too_large_selection_is_kept_with_a_warning(self, tiles_config, caplog):
+        tiles_config["presets"] = [{"name": "Huge", "selection": [[-40, -80], [40, 80]], "image-zoom": 8}]
+        presets = mapgenerator.get_presets(self.CATEGORIES)
         assert [p["name"] for p in presets] == ["Huge"]
         assert "over the limit" in caplog.text
 
-    def test_map_opacity_zero_is_kept(self, tiles_config):
-        tiles_config["image-presets"] = [{"name": "A", "bounds": self.BOUNDS, "zoom": 5, "map-opacity": 0}]
-        assert mapgenerator.get_image_presets(self.CATEGORIES)[0]["map_opacity"] == 0
-
     def test_without_map_the_tile_limit_does_not_apply(self, tiles_config, caplog):
         # 5826 px square at zoom 12: 576 tiles, but under 50 megapixels.
-        preset = {"name": "Wide", "bounds": [[-1, -1], [1, 1]], "zoom": 12}
-        tiles_config["image-presets"] = [preset]
-        mapgenerator.get_image_presets(self.CATEGORIES)
+        preset = {"name": "Wide", "selection": [[-1, -1], [1, 1]], "image-zoom": 12}
+        tiles_config["presets"] = [preset]
+        mapgenerator.get_presets(self.CATEGORIES)
         assert "over the limit" in caplog.text
         caplog.clear()
-        tiles_config["image-presets"] = [dict(preset, **{"map-opacity": 0})]
-        mapgenerator.get_image_presets(self.CATEGORIES)
+        tiles_config["presets"] = [dict(preset, tiles="No map")]
+        mapgenerator.get_presets(self.CATEGORIES)
         assert "over the limit" not in caplog.text
 
     def test_image_size(self):
         # One degree around Null Island at zoom 10: 2.84 px per 0.001 degree.
-        width, height, tiles = mapgenerator.image_preset_size([[-0.5, -0.5], [0.5, 0.5]], 10)
+        width, height, tiles = mapgenerator.image_size([[-0.5, -0.5], [0.5, 0.5]], 10)
         assert (width, height) == (728, 728)
         assert tiles == 16  # Null Island is a tile corner; 364 px each way reaches 2 tiles
 
     def test_manifest_carries_presets(self, storage_env, mapping_config, tmp_path):
-        mapping_config["image-presets"] = [{"name": "A", "bounds": self.BOUNDS, "zoom": 5}]
+        mapping_config.pop("image-presets", None)
+        mapping_config["presets"] = [{"name": "A", "selection": self.BOUNDS, "image-zoom": 5}]
         manifest = mapgenerator.create_activity_data_files([], str(tmp_path / "out"))
-        assert manifest["config"]["image_presets"] == [{"name": "A", "bounds": self.BOUNDS, "zoom": 5}]
+        assert manifest["config"]["presets"] == [{"name": "A", "selection": self.BOUNDS, "image_zoom": 5}]
 
 
 class TestCreateMapTileSelection:

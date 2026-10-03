@@ -1,11 +1,11 @@
 """Headless-browser test for saving an image of the map.
 
-The camera button's "Save image" panel redraws the drawn rectangle, or a preset
-area from [[image-presets]], on a canvas at a higher zoom (saveMapImage in
+The camera button's "Save image" panel redraws the selection, or the current
+view without one, on a canvas at a higher zoom (saveMapImage in
 templates/activity_loader_template.html): the base map's tiles for that zoom,
-the tracks, and the tile attribution. A preset has a fixed area and zoom and
-may fix the dates and types. The tile server is faked here with page.route, so
-no real tiles are downloaded.
+the tracks, and the tile attribution; with "No map" the tracks alone on a
+transparent background. A preset can set the selection and the image zoom. The
+tile server is faked here with page.route, so no real tiles are downloaded.
 
 Opt-in: the module skips unless Playwright *and* a Chromium build are installed.
 
@@ -28,18 +28,10 @@ pytest.importorskip("playwright.sync_api")  # skip module if Playwright is absen
 import mapgenerator
 import storage
 
-# Presets around the two tracks. "Runs only" fixes the types, "Year 2020" a date
-# range without activities, "Too detailed" a zoom OSM does not have, "Thin" and
-# "Wide" the line width (and "Wide" a half-faded map), and "Tracks only" no map.
+# A preset with a selection around the two tracks, saved at a zoom below the map's
+# (14), named so its file name is checked.
 PRESETS = [
-    {"name": "Runs only", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 15, "types": ["Running"]},
-    {"name": "Year 2020", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 15,
-     "date-range": ["2020-01-01", "2020-12-31"]},
-    {"name": "Too detailed", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 21},
-    {"name": "Thin", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 15, "line-width": 1},
-    {"name": "Wide", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 15, "line-width": 4,
-     "map-opacity": 50},
-    {"name": "Tracks only", "bounds": [[-0.002, 0.002], [0.006, 0.008]], "zoom": 20, "map-opacity": 0},
+    {"name": "Null Island run", "selection": [[-0.002, 0.002], [0.006, 0.008]], "image-zoom": 13},
 ]
 
 TILE_RGB = (200, 230, 200)
@@ -85,7 +77,8 @@ def served_map(config, tmp_path):
     config["map-tiles"]["zoom-start"] = 14
     config["map-tiles"]["center-point"] = [0.0, 0.005]
     config["activities"]["display-mapping-on-load"] = ["Running", "Cycling"]
-    config["image-presets"] = PRESETS
+    config.pop("image-presets", None)
+    config["presets"] = PRESETS
 
     tracks = [
         _make_track(1, "Easy run", [[0.000, 0.000], [0.000, 0.010]], "running"),
@@ -296,168 +289,85 @@ def _hide_type(page, name):
     page.keyboard.press("Escape")
 
 
-def _choose_preset(page, name):
-    page.click(".leaflet-control-image-export")
-    page.wait_for_selector("#image-export-dialog:not([hidden])", timeout=10000)
-    page.locator("#image-export-area").select_option(label=name)
-
-
-def test_preset_has_fixed_area_zoom_and_types(served_map):
+def test_saves_the_current_view_without_a_selection(served_map):
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         browser = _launch(p)
         try:
-            page, requested = _open(browser, served_map)
-            # Both types shown and the map zoomed elsewhere: the preset ignores both.
-            page.evaluate("() => mapInstance.setZoom(12)")
-            _choose_preset(page, "Runs only")
-            info = page.locator("#image-export-preset-info").inner_text()
-            assert "zoom 15" in info and "Types: Running" in info and "Dates: as on the map" in info
-            # The zoom choices and the rectangle-only controls give way to the preset's.
-            assert page.locator("#image-export-zoom").is_hidden()
-            assert page.locator("#image-export-copy-preset").is_hidden()
-            # Its area is outlined on the map while the panel is open.
-            assert page.evaluate("() => !!imageExportOutline && mapInstance.hasLayer(imageExportOutline)")
-
-            requested.clear()
-            name, png = _save(page)
-            assert name.startswith("runs-only-") and name.endswith(".png")
+            page, _ = _open(browser, served_map)
+            page.click(".leaflet-control-image-export")
+            page.wait_for_selector("#image-export-dialog:not([hidden])", timeout=10000)
+            assert page.locator("#image-export-show").is_hidden()
+            assert "The current view" in page.locator("#image-export-status").inner_text()
+            name, png = _save(page, "As on screen")
+            size = page.evaluate("() => mapInstance.getSize()")
             stats = _pixel_stats(page, png)
-            width, height, _ = mapgenerator.image_preset_size(PRESETS[0]["bounds"], 15)
-            assert (stats["width"], stats["height"]) == (width, height)
-            assert stats["running"] > 0
-            assert stats["cycling"] == 0
-            assert requested and all("/15/" in url for url in requested)
+            assert abs(stats["width"] - size["x"]) <= 1 and abs(stats["height"] - size["y"]) <= 1
+            assert stats["running"] > 0 and stats["cycling"] > 0
+            assert name.startswith("activities-map-")
 
-            page.click("#image-export-close")
-            assert page.evaluate("() => imageExportOutline === null")
-        finally:
-            browser.close()
-
-
-def test_preset_follows_the_map_where_it_fixes_nothing(served_map):
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as p:
-        browser = _launch(p)
-        try:
-            page, _ = _open(browser, served_map)
-            # "Year 2020" fixes only the dates (no activities then): nothing is drawn.
-            _choose_preset(page, "Year 2020")
-            assert "Types: as on the map" in page.locator("#image-export-preset-info").inner_text()
-            _, png = _save(page)
-            stats = _pixel_stats(page, png)
-            assert stats["running"] == 0 and stats["cycling"] == 0 and stats["tile"] > 0
-        finally:
-            browser.close()
-
-
-def test_preset_beyond_the_base_map_cannot_be_saved(served_map):
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as p:
-        browser = _launch(p)
-        try:
-            page, _ = _open(browser, served_map)
-            _choose_preset(page, "Too detailed")
-            assert page.locator("#image-export-save").is_disabled()
-            assert "Zoom 21 is more than OSM has (19)" in page.locator("#image-export-status").inner_text()
-        finally:
-            browser.close()
-
-
-def test_copy_rectangle_as_preset(served_map):
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as p:
-        browser = _launch(p)
-        try:
-            page, _ = _open(browser, served_map)
-            _hide_type(page, "Cycling")
-            _select_box(page)
-            zoom = page.locator("#image-export-zoom").input_value()
-            page.click("#image-export-copy-preset")
-            toml = page.locator("#image-export-preset-toml").input_value()
-            lines = toml.splitlines()
-            assert lines[0] == "[[image-presets]]"
-            assert f"zoom = {zoom}" in lines
-            assert "bounds = [[-0.0020, 0.0020], [0.0060, 0.0080]]" in lines
-            # The map's current state, commented out, to fix it if wanted.
-            assert '# date-range = "all"' in lines
-            assert '# types = ["Running"]' in lines
-            assert '# tiles = "OSM"' in lines
-            assert "# line-width = 2" in lines
-            assert "# map-opacity = 100   # 0: no map, transparent background" in lines
+            # Moving the map changes what is saved.
+            page.evaluate("() => mapInstance.setZoom(15)")
             page.wait_for_function(
-                "() => document.getElementById('image-export-status').textContent.includes('config-local.toml')",
-                timeout=10000,
-            )
+                "() => document.getElementById('image-export-status').textContent.includes('zoom 1')", timeout=10000)
+            # The chosen detail stays chosen; "as on screen" is the new zoom.
+            assert page.locator("#image-export-zoom").input_value() == "14"
+            on_screen = page.locator("#image-export-zoom option", has_text="As on screen")
+            assert on_screen.get_attribute("value") == "15"
         finally:
             browser.close()
 
 
-def test_preset_line_width_and_map_opacity(served_map):
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as p:
-        browser = _launch(p)
-        try:
-            page, _ = _open(browser, served_map)
-            _choose_preset(page, "Thin")
-            assert "Lines: 1 px" in page.locator("#image-export-preset-info").inner_text()
-            _, thin_png = _save(page)
-            thin = _pixel_stats(page, thin_png)
-
-            page.locator("#image-export-area").select_option(label="Wide")
-            info = page.locator("#image-export-preset-info").inner_text()
-            assert "Lines: 4 px" in info and "at 50 %" in info
-            _, wide_png = _save(page)
-            wide = _pixel_stats(page, wide_png)
-
-            # Four times the width, whatever the display settings say (2 px): both
-            # horizontal tracks cross the middle column.
-            assert thin["inkInColumn"] > 0
-            assert wide["inkInColumn"] > 3 * thin["inkInColumn"]
-            # The map fades over white; the page's own map opacity (100 %) stays.
-            # (A few anti-aliased line edges can match the other colour.)
-            assert thin["fadedTile"] < thin["tile"] / 100
-            assert wide["tile"] < wide["fadedTile"] / 100
-        finally:
-            browser.close()
-
-
-def test_transparent_background(served_map):
+def test_transparent_background_with_no_map(served_map):
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         browser = _launch(p)
         try:
             page, requested = _open(browser, served_map)
+            page.select_option("#tile-layer-select", label="No map")
             _select_box(page)
-            page.check("#image-export-transparent")
             assert "no map tiles" in page.locator("#image-export-status").inner_text()
             # Without tiles to download, zooms past OSM's last one are offered.
-            assert page.locator("#image-export-zoom option").last.get_attribute("value") == "22" or \
-                page.locator("#image-export-zoom option").last.inner_text().endswith("too large")
+            last = page.locator("#image-export-zoom option").last
+            assert last.get_attribute("value") == "22" or last.inner_text().endswith("too large")
             requested.clear()
             name, png = _save(page, "2× detail")
             assert name.endswith("-transparent.png")
             stats = _pixel_stats(page, png)
             assert stats["tile"] == 0 and stats["clear"] > 0 and stats["magenta"] > 0
             assert requested == []
+        finally:
+            browser.close()
 
-            # A preset with map-opacity 0 is transparent whatever the box says, and may
-            # go past the map's last zoom.
-            page.uncheck("#image-export-transparent")
-            page.locator("#image-export-area").select_option(label="Tracks only")
-            box = page.locator("#image-export-transparent")
-            assert box.is_checked() and box.is_disabled()
-            assert "Map: none, transparent background" in page.locator("#image-export-preset-info").inner_text()
+
+def test_preset_selection_and_image_zoom(served_map):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch(p)
+        try:
+            page, requested = _open(browser, served_map)
+            page.click(".leaflet-control-presets")
+            page.locator("#presets-list .preset-item", has_text="Null Island run").click()
+            page.click(".leaflet-control-image-export")
+            # The preset's image zoom is chosen, though below the map's.
+            assert page.locator("#image-export-zoom").input_value() == "13"
+            assert page.locator("#image-export-zoom option:checked").inner_text().startswith("1/2 of the detail")
+
+            requested.clear()
             name, png = _save(page)
-            assert name.startswith("tracks-only-") and name.endswith("-transparent.png")
+            assert name.startswith("null-island-run-") and name.endswith("-z13.png")
             stats = _pixel_stats(page, png)
-            assert stats["clear"] > 0 and stats["magenta"] > 0
-            assert requested == []
+            width, height, _ = mapgenerator.image_size(PRESETS[0]["selection"], 13)
+            assert (stats["width"], stats["height"]) == (width, height)
+            assert requested and all("/13/" in url for url in requested)
+
+            # A selection drawn by hand is no longer the preset's: the file name says so.
+            page.click("#image-export-close")
+            _select_box(page)
+            name, _ = _save(page)
+            assert name.startswith("activities-map-")
         finally:
             browser.close()

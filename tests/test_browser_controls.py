@@ -1,9 +1,9 @@
 """Headless-browser test for the map's control layout and the tiles/types dropdowns.
 
 The date panel heads the top-left stack, with the tiles select and the activity-types
-multiselect under it. The top-right column holds the hamburger, the area-select tool,
-the save-image camera, the display-settings gear and the zoom bar; the hamburger folds
-everything but itself.
+multiselect under it. The top-right column holds the hamburger, the presets bookmark,
+the area-select tool, the save-image camera, the display-settings gear and the zoom bar;
+the hamburger folds everything but itself.
 The dropdowns replace Folium's layer control, which stays on the map hidden. Covers
 initializeLayerSelects, initializeDisplaySettings and the layout in
 templates/activity_loader_template.html.
@@ -113,6 +113,7 @@ def test_layout_panels_left_buttons_right(page):
     slider = _box(page, "#date-range-slider-container")
     selects = _box(page, "#map-layer-selects")
     hamburger = _box(page, ".leaflet-control-toggle-menu")
+    presets = _box(page, "#presets-bar")
     area = _box(page, "#area-select-bar")
     camera = _box(page, "#image-export-bar")
     settings = _box(page, "#display-settings-bar")
@@ -122,16 +123,17 @@ def test_layout_panels_left_buttons_right(page):
     assert slider["x"] == selects["x"] == 10
     assert slider["y"] + slider["height"] <= selects["y"]
 
-    # Right column, top to bottom: hamburger, area select, save image, settings, a gap, zoom.
+    # Right column, top to bottom: hamburger, presets, area select, save image, settings, a gap, zoom.
     right = page.locator(".leaflet-top.leaflet-right")
-    for selector in (".leaflet-control-toggle-menu", "#area-select-bar", "#image-export-bar",
+    for selector in (".leaflet-control-toggle-menu", "#presets-bar", "#area-select-bar", "#image-export-bar",
                      "#display-settings-bar", ".leaflet-control-zoom"):
         assert right.locator(selector).count() == 1
-    assert (hamburger["x"] + hamburger["width"] == area["x"] + area["width"]
+    assert (hamburger["x"] + hamburger["width"] == presets["x"] + presets["width"] == area["x"] + area["width"]
             == camera["x"] + camera["width"] == settings["x"] + settings["width"]
             == zoom["x"] + zoom["width"])
     assert hamburger["x"] + hamburger["width"] > 1000
-    assert hamburger["y"] + hamburger["height"] < area["y"]
+    assert hamburger["y"] + hamburger["height"] < presets["y"]
+    assert presets["y"] + presets["height"] < area["y"]
     assert area["y"] + area["height"] < camera["y"]
     assert camera["y"] + camera["height"] < settings["y"]
     assert settings["y"] + settings["height"] < zoom["y"]
@@ -143,7 +145,7 @@ def test_layout_panels_left_buttons_right(page):
     assert not page.locator(".leaflet-control-layers").is_visible()
 
 
-FOLDED = ("#date-range-slider-container", "#map-layer-selects", "#area-select-bar",
+FOLDED = ("#date-range-slider-container", "#map-layer-selects", "#presets-bar", "#area-select-bar",
           "#image-export-bar", "#display-settings-bar", ".leaflet-control-zoom")
 
 
@@ -165,13 +167,21 @@ def test_bar_buttons_are_not_underlined_on_hover(page):
 
 
 def test_tile_select_switches_base_layer(page):
-    assert page.locator("#tile-layer-select option").all_inner_texts() == ["OSM", "Mapy Winter"]
+    assert page.locator("#tile-layer-select option").all_inner_texts() == ["OSM", "Mapy Winter", "No map"]
     assert page.input_value("#tile-layer-select") == "OSM"
 
     page.select_option("#tile-layer-select", label="Mapy Winter")
     active = page.evaluate(
         "() => Object.keys(baseLayers).filter(n => mapInstance.hasLayer(baseLayers[n]))")
     assert active == ["Mapy Winter"]
+
+    # "No map": the tracks alone on white; no tiles are shown.
+    page.select_option("#tile-layer-select", label="No map")
+    assert page.evaluate("() => isNoMapLayer(activeBaseLayer())")
+    assert page.evaluate("() => mapInstance.getContainer().style.background").startswith("rgb(255, 255, 255)")
+    assert page.locator(".leaflet-tile-pane img").count() == 0
+    page.select_option("#tile-layer-select", label="OSM")
+    assert page.evaluate("() => mapInstance.getContainer().style.background") == ""
 
 
 def test_types_multiselect_toggles_categories(page):
@@ -320,7 +330,7 @@ def test_corrupt_saved_settings_fall_back_to_defaults(page):
     assert _tile_pane_opacity(page) == ""
 
 
-def test_single_base_layer_hides_tile_select(config, tmp_path):
+def test_single_base_layer_still_offers_no_map(config, tmp_path):
     from playwright.sync_api import sync_playwright
 
     config["map-tiles"]["tiles"] = [{"tiles": "OpenStreetMap", "name": "OSM"}]
@@ -342,7 +352,7 @@ def test_single_base_layer_hides_tile_select(config, tmp_path):
                 page = browser.new_page()
                 page.goto(f"http://127.0.0.1:{port}/activities_map.html")
                 page.wait_for_selector("#type-filter-button", timeout=20000)
-                assert not page.locator("#tile-layer-select").is_visible()
+                assert page.locator("#tile-layer-select option").all_inner_texts() == ["OSM", "No map"]
             finally:
                 browser.close()
     finally:

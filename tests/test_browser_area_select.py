@@ -311,7 +311,7 @@ def test_row_hover_highlights_matching_track(served_map):
 
 
 def test_button_above_zoom_bar_and_folds_with_hamburger(served_map):
-    """The tool sits between the hamburger and the zoom bar and folds with the hamburger."""
+    """The tool sits between the presets and the zoom bar and folds with the hamburger."""
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -321,12 +321,11 @@ def test_button_above_zoom_bar_and_folds_with_hamburger(served_map):
             page.goto(served_map)
             _wait_loaded(page)
 
-            # Its own bar in the top-right column, right after the hamburger's.
+            # Its own bar in the top-right column, right after the presets' (under the hamburger).
             bar = page.locator(".leaflet-top.leaflet-right #area-select-bar")
             assert bar.locator(".leaflet-control-area-select").count() == 1
             assert page.evaluate(
-                "() => document.getElementById('area-select-bar').previousElementSibling"
-                ".contains(document.querySelector('.leaflet-control-toggle-menu'))")
+                "() => document.getElementById('area-select-bar').previousElementSibling.id") == "presets-bar"
             assert page.locator(".leaflet-control-area-select").is_visible()
 
             # Hamburger folds the tool away, together with the zoom bar.

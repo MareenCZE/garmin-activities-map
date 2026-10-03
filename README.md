@@ -65,7 +65,8 @@ single year), or enter exact dates. The browser remembers the last preset you pi
 a relative one such as "This year" moves with the calendar.
 
 The drop-down under it selects the activity types to show, with the number of activities
-of each type.
+of each type. The one beside it selects the background map; **No map** shows the tracks
+alone on white.
 
 ![Date range and activity type filters](images/filters.png)
 
@@ -86,54 +87,71 @@ can be turned off with `enable-area-selection = false` under `[activities]`.
 The camera button in the top-right corner saves the map as a PNG with more detail than
 the screen shows. The image is drawn again at a higher zoom, as if you zoomed in, took
 several screenshots and joined them. It carries the map provider's credit, which their
-terms require. In the panel, choose the **Area**:
+terms require.
 
-- **Drawn rectangle**: the rectangle from the area selection (its dialog also has a
-  **Save as image…** button). Choose the detail (2×, 4×, … up to the map's highest zoom).
-  The image shows what the map shows now: the background map, the date and type filters,
-  the display settings and any highlighted track with its direction. Lines and markers
-  keep their screen width, so they look thinner at more detail; tick **Enlarge lines
-  with the image** to get an enlargement of the screen instead.
-- **Transparent background (tracks only)** leaves the map out: the image has only the
-  tracks, so images of the same area and zoom can be laid over each other, e.g. one per
-  year in an image editor. No map tiles are downloaded, so it can go past the map's
-  highest zoom.
-- **A preset**: a fixed area and zoom from your configuration, so images of it are
-  comparable over time, e.g. a yearly image of your city. Its outline shows on the map
-  while it is chosen, and the file is named after it, e.g. `prague-2026-09-30.png`.
+It saves the area selection (its dialog also has a **Save as image…** button), or the
+whole view when nothing is selected. Choose the detail (2×, 4×, … up to the map's highest
+zoom). The image shows what the map shows now: the background map, the date and type
+filters, the display settings and any highlighted track with its direction. Lines and
+markers keep their screen width, so they look thinner at more detail; tick **Enlarge
+lines with the image** to get an enlargement of the screen instead.
 
-Presets are defined in `config-local.toml`. **Copy as preset** in the panel turns the
-drawn rectangle into a ready entry; paste it, give it a name and generate the map again.
-
-```toml
-[[image-presets]]
-name = "Prague"
-bounds = [[49.94, 14.22], [50.18, 14.71]]   # [[south, west], [north, east]]
-zoom = 13
-# Optional; left out, the map's current state is used:
-date-range = "this-year"   # or "all", "last-12-months", "year-2024", ["2024-01-01", "2024-06-30"], ...
-types = ["Running", "Cycling"]
-tiles = "OSM"
-map-opacity = 60           # percent; 0 leaves the map out: tracks on a transparent background
-line-width = 3             # px, instead of the display settings' width
-line-scale = 1.5           # multiplies the line width
-```
-
-Fixing `line-width` and `map-opacity` in a preset makes its images the same whatever
-the display settings of the browser that saves them. For images to lay over each other,
-use `map-opacity = 0`; transparent images get `-transparent` in their file name.
+With **No map** as the background map, the image has only the tracks on a transparent
+background, so images of the same area and zoom can be laid over each other, e.g. one per
+year in an image editor. No map tiles are downloaded, so it can go past the map's highest
+zoom. Such files get `-transparent` in their name.
 
 Limits and caveats:
 
 - The map tiles are downloaded again at the chosen zoom, at most 400 per image. Mapy.com
   counts them against your API key's quota like any other tiles.
 - The image size is limited to 50 megapixels (16 on phones and tablets). Larger choices
-  are shown as "too large", and generating the map warns about a preset over the limits.
-  A transparent image has no tiles, so only the size limit applies.
+  are shown as "too large", and generating the map warns about a preset selection over
+  the limits. An image with no map has no tiles, so only the size limit applies.
 - Tracks are stored simplified (`coords-simplification-factor`), so from about zoom 15
   they show straight segments while the background map keeps getting sharper.
 - A preset gives the same area every time, but the background map changes as its
   provider updates it.
+
+### Presets
+
+The bookmark button in the top-right corner lists your presets: named states of the map.
+Applying one sets what the preset has (the view, area selection, date range, activity
+types, background map or display settings) and leaves the rest as it is. The panel then
+closes, and a preset's selection shows its list and totals. A preset with
+only a date range switches the year and keeps the view; one with a view and a selection
+goes straight to a place.
+
+A preset with a selection and an `image-zoom` makes images of a place comparable over
+time, e.g. a yearly image of your city: apply it, then save the image. The file is named
+after the preset, e.g. `prague-2026-09-30-z13.png`.
+
+Presets are defined in `config-local.toml`. Under **New preset from the current state**
+in the panel, tick the parts to keep and press **Copy as preset** for a ready entry;
+paste it, give it a name and generate the map again.
+
+```toml
+[[presets]]
+name = "Prague this year"
+# Every key below is optional; the map keeps what a preset leaves out.
+center = [50.08, 14.44]                      # the view
+zoom = 12
+selection = [[49.94, 14.22], [50.18, 14.71]] # [[south, west], [north, east]]
+image-zoom = 13                              # detail "Save image" saves the selection at
+date-range = "this-year"   # or "all", "last-12-months", "year-2024", ["2024-01-01", "2024-06-30"], ...
+types = ["Running", "Cycling"]
+tiles = "OSM"              # or "No map"
+map-opacity = 60           # percent, 20 to 100
+line-width = 3             # px, 1 to 5
+thin-lines = false
+show-direction = true
+```
+
+A selection is brought into view when the preset sets no `center` or `zoom`. Setting
+`line-width` and `map-opacity` in a preset makes its images the same whatever the
+display settings were before. Presets from the earlier `[[image-presets]]` are reported
+when the map is generated: rename the section to `[[presets]]`, `bounds` to `selection`
+and `zoom` to `image-zoom`.
 
 ### Display settings
 
@@ -391,3 +409,6 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
   `garminconnect`), which is being retired, so login needs to move to its successor.
 - **Installer.** Replace the manual installation steps in this README (venv,
   `pip install`, first configuration) with an installer script.
+- **Comparison mode.** Two maps side by side that share every setting (view, zoom,
+  activity types, base map, display settings) except the date range, e.g. to compare
+  two years. A selection shows on both maps, each with its own summary.

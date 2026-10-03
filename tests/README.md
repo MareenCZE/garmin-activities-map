@@ -61,12 +61,15 @@ python -m pytest tests/test_browser_*.py
 - `test_browser_direction.py` — headless-Chromium check of the direction chevrons and
   start/finish markers on a highlighted track; opt-in like the one above
 - `test_browser_image_export.py` — headless-Chromium check of saving an image with
-  faked tiles: size and zoom, filtered tracks, zoom choices, failed tiles, presets
-  (fixed area, zoom, types, dates, line width and map opacity, too-detailed zoom),
-  transparent background and "Copy as preset"; opt-in like the one above
+  faked tiles: size and zoom, filtered tracks, zoom choices, failed tiles, the current
+  view without a selection, transparent background with "No map", and a preset's
+  selection and image zoom; opt-in like the one above
+- `test_browser_presets.py` — headless-Chromium check of presets: the list, applying a
+  full and a partial preset, a selection brought into view, and "Copy as preset" from
+  the current state; opt-in like the one above
 - `test_browser_controls.py` — headless-Chromium check of the control layout
   (date panel, tiles/types dropdowns, zoom bar, top-right hamburger) and of the
-  tiles select and activity-types multiselect; opt-in like the one above
+  tiles select (including "No map") and activity-types multiselect; opt-in like the one above
 - `test_browser_date_range.py` — headless-Chromium check of the date-range panel
   (slider, presets, date fields, remembered preset); opt-in like the one above
 - `test_leak_guard.py` — the `.githooks` pre-commit guard: realistic synthetic

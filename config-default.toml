@@ -64,28 +64,32 @@ tiles = [
 ]
 
 # #####################################################################
-# Image presets: fixed areas for "Save image" on the map page (the camera button). Images saved from a preset always
-# cover the same area at the same zoom, so they are comparable over time. Put your own into config-local.toml; the
-# list there replaces this one. A rectangle drawn on the map can be turned into a preset with "Copy as preset".
-#   name        - shown in the page and used for the file name
-#   bounds      - [[south, west], [north, east]] in degrees
-#   zoom        - map zoom level; each level doubles the image width and height. One image may need at most 400 map
-#                 tiles and 50 megapixels (16 on phones and tablets); the map generation warns when a preset is larger.
-# Optional; left out, the map's current state is used:
-#   date-range  - "all", "last-30-days", "last-12-months", "this-month", "last-month", "this-year", "last-year",
-#                 "year-2024", or ["2024-01-01", "2024-06-30"]
-#   types       - activity types (names from [activities].mapping) to draw
-#   tiles       - background map (a name from [map-tiles].tiles)
-#   map-opacity - background map opacity in percent; 0 leaves the map out for a transparent background with only the
-#                 tracks, to lay images over each other (no tiles are downloaded then, so only the image size limits it)
-#   line-width  - track width in px (the page's display settings offer 1 to 5)
-#   line-scale  - multiplies the line width
+# Presets: named states of the map, applied from the bookmark button on the map page. A preset sets only the keys it
+# has; the rest of the map stays as it is. Put your own into config-local.toml; the list there replaces this one.
+# "New preset from the current state" in the same panel writes an entry for you to paste here.
+#   name           - shown in the page (required)
+#   center         - [lat, lon] of the map's middle, in degrees
+#   zoom           - map zoom level
+#   selection      - selected area, [[south, west], [north, east]] in degrees: listed and summarized like a drawn one,
+#                    and what "Save image" saves. Brought into view when the preset sets no center or zoom.
+#   image-zoom     - zoom level "Save image" saves at; each level doubles the image width and height. One image may need
+#                    at most 400 map tiles and 50 megapixels (16 on phones and tablets); the map generation warns when a
+#                    preset's selection is larger. Fixed together with selection, images of a place are comparable.
+#   date-range     - "all", "last-30-days", "last-12-months", "this-month", "last-month", "this-year", "last-year",
+#                    "year-2024", or ["2024-01-01", "2024-06-30"]
+#   types          - activity types to show (names from [activities].mapping); the others are hidden
+#   tiles          - base map (a name from [map-tiles].tiles), or "No map": the tracks alone on a white ground, saved as
+#                    images with a transparent background to lay over each other (no tiles are downloaded then)
+#   map-opacity    - base map opacity in percent, 20 to 100
+#   line-width     - track width in px, 1 to 5
+#   thin-lines     - true or false: thin, see-through lines
+#   show-direction - true or false: arrows, start and finish on the highlighted track
 #
-# [[image-presets]]
-# name = "Europe"
-# bounds = [[35.0, -11.0], [71.0, 32.0]]
-# zoom = 6
-# date-range = "all"
+# [[presets]]
+# name = "Europe this year"
+# center = [52.0, 10.0]
+# zoom = 5
+# date-range = "this-year"
 # tiles = "OSM"
 
 # #####################################################################
