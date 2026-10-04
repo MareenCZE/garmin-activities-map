@@ -138,7 +138,6 @@ def test_opens_with_the_single_maps_state_and_the_same_dates(served):
     served.evaluate("""() => {
         setDateRange('year-2024');
         setBaseLayer('Light');
-        setCategoryShown('Cycling', true);
         setDisplaySettings({ lineWidth: 3.5 });
         mapInstance.setView([0.001, 0.002], 14, { animate: false });
         setAreaSelection(L.latLngBounds([-0.02, -0.02], [0.02, 0.02]));
@@ -151,6 +150,11 @@ def test_opens_with_the_single_maps_state_and_the_same_dates(served):
         _same_view(state, before)
         for key in ("types", "dates", "datePreset", "tiles", "display", "selection"):
             assert state[key] == before[key], key
+        # The selection is set before the data arrives; its summary follows the data.
+        frame.wait_for_function("""() => {
+            const dialog = document.getElementById('area-selection-dialog');
+            return dialog && dialog.textContent.includes('2 activities');
+        }""", timeout=5000)
 
 
 def test_second_map_shows_only_its_date_range(served):

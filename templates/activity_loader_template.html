@@ -686,6 +686,9 @@ async function loadCategoryData(categoryName, categoryInfo) {
         activityData[categoryName] = activities;
         console.log(`Loaded ${activities.length} activities for ${categoryName}`);
         addActivitiesToMap(categoryName, activities);
+        // A selection made before the tracks arrived (state handed over when a
+        // comparison opens or closes) is counted again with them.
+        refreshSelectionDialogIfOpen();
     } catch (error) {
         console.error(`Error loading data for ${categoryName}:`, error);
     }
