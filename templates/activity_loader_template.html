@@ -118,6 +118,71 @@ function injectMapControlStyles() {
             background: transparent;
             color: rgba(0, 0, 0, 0.3);
         }
+        /* Action buttons in the dialogs, in the panels' glass style. */
+        .map-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            font: inherit;
+            font-size: 12px;
+            line-height: 16px;
+            color: rgba(0, 0, 0, 0.8);
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: 6px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .map-button:hover {
+            background: rgba(0, 124, 186, 0.10);
+            border-color: rgba(0, 124, 186, 0.35);
+        }
+        .map-button:active {
+            background: rgba(0, 124, 186, 0.18);
+        }
+        .map-button:focus-visible {
+            outline: 2px solid rgba(42, 125, 225, 0.5);
+            outline-offset: 1px;
+        }
+        .map-dialog select {
+            padding: 4px 6px;
+            font: inherit;
+            font-size: 12px;
+            color: rgba(0, 0, 0, 0.8);
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .map-dialog select:focus-visible {
+            outline: 2px solid rgba(42, 125, 225, 0.5);
+            outline-offset: 1px;
+        }
+        .map-button svg {
+            width: 14px;
+            height: 14px;
+            flex: 0 0 auto;
+        }
+        /* The panel's main action, in the selection rectangle's blue. */
+        .map-button.primary {
+            color: #fff;
+            background: #2a7de1;
+            border-color: #2a7de1;
+        }
+        .map-button.primary:hover {
+            background: #1f6cc9;
+            border-color: #1f6cc9;
+        }
+        .map-button:disabled,
+        .map-button.primary:disabled {
+            color: rgba(0, 0, 0, 0.35);
+            background: rgba(255, 255, 255, 0.5);
+            border-color: rgba(0, 0, 0, 0.1);
+            box-shadow: none;
+            cursor: default;
+        }
         #map-layer-selects {
             display: flex;
             align-items: center;
@@ -618,9 +683,15 @@ async function loadManifest() {
         manifest = await response.json();
         console.log('Loaded manifest:', manifest);
 
+        // The state handed over by a comparison, else the one remembered from the
+        // last visit, else the map as configured.
+        const startState = takeComparisonHandoff() || loadMapState();
+        const startTypes = startState && Array.isArray(startState.types) ? startState.types : null;
+
         // Download the categories shown on load while the map is still being set up
         const initialCategories = Object.entries(manifest.categories)
-            .filter(([, info]) => info.show_on_load && info.activity_count > 0);
+            .filter(([name, info]) => info.activity_count > 0 &&
+                (startTypes ? startTypes.includes(name) : info.show_on_load));
         initialCategories.forEach(([name, info]) => fetchCategoryActivities(name, info).catch(() => {}));
 
         console.log('Waiting for map...');
@@ -659,8 +730,7 @@ async function loadManifest() {
         initializeTapSelection();
         initializeComparison();
         arrangeTopRightControls();
-        const handoff = takeComparisonHandoff();
-        if (handoff) applyComparisonState(handoff);
+        restoreMapState(startState);
         announceComparisonPane();
 
         // Drawn in manifest order, which keeps the stacking of categories stable
@@ -686,8 +756,8 @@ async function loadCategoryData(categoryName, categoryInfo) {
         activityData[categoryName] = activities;
         console.log(`Loaded ${activities.length} activities for ${categoryName}`);
         addActivitiesToMap(categoryName, activities);
-        // A selection made before the tracks arrived (state handed over when a
-        // comparison opens or closes) is counted again with them.
+        // A selection set before the tracks arrived (the state restored at
+        // start-up) is counted again with them.
         refreshSelectionDialogIfOpen();
     } catch (error) {
         console.error(`Error loading data for ${categoryName}:`, error);
@@ -1600,8 +1670,8 @@ let mapControlsFolded = false;
 
 function toggleMapControls() {
     // The hamburger folds everything but itself: the top-left corner (date panel,
-    // tiles/types dropdowns) and the buttons under it (presets, area select,
-    // save image, display settings, comparison, zoom).
+    // tiles/types dropdowns), the buttons under it (presets, area select,
+    // save image, display settings, comparison, zoom) and the selection dialog.
     mapControlsFolded = !mapControlsFolded;
     const folded = [
         mapInstance._controlCorners.topleft,
@@ -1618,7 +1688,8 @@ function toggleMapControls() {
     const typeMenu = document.getElementById('type-filter-menu');
     if (typeMenu) typeMenu.classList.remove('open');
     if (mapControlsFolded) closeMapDialogs();
-    notifyComparison('fold');
+    placeSelectionDialog();
+    onStateChange('fold');
 }
 
 /**
@@ -1731,7 +1802,7 @@ function setDisplaySettings(changes) {
     applyMapOpacity();
     applyShowDirection();
     syncDisplaySettingsControls();
-    notifyComparison('display');
+    onStateChange('display');
 }
 
 function syncDisplaySettingsControls() {
@@ -1753,17 +1824,13 @@ function closeMapDialogs(except) {
 }
 
 function setDisplaySettingsOpen(open) {
+    if (open) closeMapDialogs('display-settings');
+    setMapDialogOpen('display-settings-dialog', '.leaflet-control-display-settings', open);
+}
+
+function displaySettingsOpen() {
     const dialog = document.getElementById('display-settings-dialog');
-    const button = document.querySelector('.leaflet-control-display-settings');
-    if (!dialog || !button) return;
-    if (open) {
-        closeMapDialogs('display-settings');
-        // Level with the gear button, left of the button column.
-        const top = Math.round(button.getBoundingClientRect().top);
-        dialog.style.top = `${top}px`;
-    }
-    dialog.hidden = !open;
-    button.setAttribute('aria-expanded', String(open));
+    return !!dialog && !dialog.hidden;
 }
 
 function initializeDisplaySettings() {
@@ -1828,6 +1895,10 @@ function initializeDisplaySettings() {
             width: 100%;
             margin: 4px 0 0;
         }
+        .map-dialog .ds-reset {
+            border-top: 1px solid rgba(0,0,0,0.1);
+            padding-top: 10px;
+        }
     `;
     document.head.appendChild(style);
 
@@ -1841,8 +1912,7 @@ function initializeDisplaySettings() {
     button.style.cssText = 'display:flex;align-items:center;justify-content:center;cursor:pointer;';
     button.onclick = function(e) {
         L.DomEvent.stop(e);
-        const dialog = document.getElementById('display-settings-dialog');
-        setDisplaySettingsOpen(!!dialog && dialog.hidden);
+        setDisplaySettingsOpen(!displaySettingsOpen());
     };
     L.DomEvent.disableClickPropagation(button);
 
@@ -1896,6 +1966,11 @@ function initializeDisplaySettings() {
                 <label><input type="checkbox" id="show-direction-toggle"> Show direction</label>
                 <div class="ds-hint">Arrows, start and finish on the highlighted track.</div>
             </div>
+            <div class="ds-reset">
+                <button type="button" id="reset-map-state" class="map-button">Reset to defaults</button>
+                <div class="ds-hint">The map remembers its view, background, activity types,
+                    selection, time range and these settings. This forgets them all.</div>
+            </div>
         </div>
     `;
     document.body.appendChild(dialog);
@@ -1916,6 +1991,7 @@ function initializeDisplaySettings() {
     dialog.querySelector('#display-settings-close').onclick = function() {
         setDisplaySettingsOpen(false);
     };
+    dialog.querySelector('#reset-map-state').onclick = resetMapState;
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') setDisplaySettingsOpen(false);
     });
@@ -2073,6 +2149,27 @@ function onAreaSelectTouch(e) {
 
 const AREA_SELECT_STYLE = { color: '#2a7de1', weight: 2, dashArray: '5,5', fillOpacity: 0.08, interactive: false };
 
+const SELECTION_ZOOM_PADDING_PX = 12;
+// Four corners closing in on a frame.
+const ZOOM_TO_SELECTION_ICON =
+    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+    '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/** Fit the selection to the map, with a little room around it. */
+function zoomToSelection() {
+    if (!areaSelectBounds) return;
+    // Any zoom, not only whole levels: at a whole level the rectangle can fill as
+    // little as half the map. The next zoom by button or wheel snaps back.
+    const zoomSnap = mapInstance.options.zoomSnap;
+    mapInstance.options.zoomSnap = 0;
+    try {
+        mapInstance.fitBounds(areaSelectBounds, { padding: [SELECTION_ZOOM_PADDING_PX, SELECTION_ZOOM_PADDING_PX] });
+    } finally {
+        mapInstance.options.zoomSnap = zoomSnap;
+    }
+}
+
 /** Select the area in bounds as if drawn (a preset), replacing any selection. */
 function setAreaSelection(bounds) {
     clearSelection();
@@ -2082,7 +2179,7 @@ function setAreaSelection(bounds) {
     showSelectionDialog();
     if (imageExportOpen()) resetImageExportStatus();
     if (presetsOpen()) updatePresetsControls();
-    notifyComparison('selection');
+    onStateChange('selection');
 }
 
 function onAreaSelectPointerDown(e) {
@@ -2134,7 +2231,7 @@ function onAreaSelectPointerUp(e) {
     showSelectionDialog();
     if (imageExportOpen()) resetImageExportStatus();
     if (presetsOpen()) updatePresetsControls();
-    notifyComparison('selection');
+    onStateChange('selection');
 }
 
 // ---- Resizing the rectangle -------------------------------------------------
@@ -2224,7 +2321,7 @@ function addAreaSelectHandles() {
             presetSelectionName = null;  // no longer the preset's area
             placeAreaSelectHandles(bounds, handle);
             refreshSelectionDialogIfOpen();
-            notifyComparison('selection');
+            onStateChange('selection');
         });
         handle.on('dragend', function() {
             // A side handle snaps back to the middle of its side.
@@ -2275,7 +2372,7 @@ function clearSelection() {
     raiseOpenPopupTrack();
     if (imageExportOpen()) resetImageExportStatus();
     if (presetsOpen()) updatePresetsControls();
-    notifyComparison('selection');
+    onStateChange('selection');
 }
 
 // ---- The results dialog ----------------------------------------------------
@@ -2425,8 +2522,9 @@ function showSelectionDialog() {
         <div style="overflow-y:auto;">
             ${selection.length ? listRows : emptyMsg}
         </div>
-        ${areaControls ? `<div style="padding:8px 10px;border-top:1px solid rgba(0,0,0,0.1);">
-            <button type="button" id="area-sel-save-image" style="font-size:12px;cursor:pointer;">Save as image…</button>
+        ${areaControls ? `<div style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;border-top:1px solid rgba(0,0,0,0.1);">
+            <button type="button" id="area-sel-zoom" class="map-button">${ZOOM_TO_SELECTION_ICON}Zoom to selection</button>
+            <button type="button" id="area-sel-save-image" class="map-button">${IMAGE_EXPORT_ICON}Save as image…</button>
         </div>` : ''}
     `;
     document.body.appendChild(dialog);
@@ -2438,12 +2536,14 @@ function showSelectionDialog() {
     if (closeButton) closeButton.onclick = clearSelection;
     const saveImageButton = dialog.querySelector('#area-sel-save-image');
     if (saveImageButton) saveImageButton.onclick = () => setImageExportOpen(true);
+    const zoomButton = dialog.querySelector('#area-sel-zoom');
+    if (zoomButton) zoomButton.onclick = zoomToSelection;
 
     dialog.querySelectorAll('input[name="area-sel-mode"]').forEach(function(input) {
         input.onchange = function() {
             areaSelectMode = this.value;
             showSelectionDialog(); // recompute from the frozen bounds
-            notifyComparison('selection');
+            onStateChange('selection');
         };
     });
 
@@ -2935,10 +3035,16 @@ function setImageExportOpen(open) {
     }
 }
 
-/** The selection dialog sits where the panels open: it steps aside while one is open. */
+/**
+ * The selection dialog sits where the panels open: it steps aside while one is
+ * open, and folds away with the controls.
+ */
 function placeSelectionDialog() {
     const selection = document.getElementById('area-selection-dialog');
-    if (selection) selection.style.display = imageExportOpen() || presetsOpen() ? 'none' : 'flex';
+    if (selection) {
+        const panelOpen = imageExportOpen() || presetsOpen() || displaySettingsOpen();
+        selection.style.display = panelOpen || mapControlsFolded ? 'none' : 'flex';
+    }
 }
 
 function imageExportOpen() {
@@ -3055,12 +3161,12 @@ function initializeImageExport() {
             <button type="button" class="ds-close" id="image-export-close" title="Close">✕</button>
         </div>
         <div class="ds-body">
-            <select id="image-export-zoom" title="Detail of the saved image" style="width:100%;font-size:12px;"></select>
+            <select id="image-export-zoom" title="Detail of the saved image" style="width:100%;"></select>
             <label><input type="checkbox" id="image-export-scale-lines"> Enlarge lines with the image</label>
             <div class="ds-hint" id="image-export-no-map-hint">For tracks only on a transparent background, choose "${NO_MAP_LAYER_NAME}" as the map.</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button id="image-export-save" type="button" style="font-size:12px;cursor:pointer;">Save image</button>
-                <button id="image-export-show" type="button" style="font-size:12px;cursor:pointer;">Show selection</button>
+                <button id="image-export-save" type="button" class="map-button primary">${IMAGE_EXPORT_ICON}Save image</button>
+                <button id="image-export-show" type="button" class="map-button">${ZOOM_TO_SELECTION_ICON}Show selection</button>
             </div>
             <div id="image-export-status" style="color:#666;"></div>
         </div>
@@ -3081,9 +3187,7 @@ function initializeImageExport() {
         const job = imageExportJob();
         if (job) saveMapImage(job);
     };
-    dialog.querySelector('#image-export-show').onclick = function() {
-        if (areaSelectBounds) mapInstance.fitBounds(areaSelectBounds);
-    };
+    dialog.querySelector('#image-export-show').onclick = zoomToSelection;
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') setImageExportOpen(false);
     });
@@ -3336,7 +3440,7 @@ function initializePresets() {
                     ${PRESET_PARTS.map(([key, label]) =>
                         `<label><input type="checkbox" id="preset-part-${key}" checked> ${label}</label>`).join('')}
                 </div>
-                <button id="presets-copy" type="button" style="font-size:12px;cursor:pointer;"
+                <button id="presets-copy" type="button" class="map-button"
                     title="The ticked parts as a [[presets]] entry for config-local.toml">Copy as preset</button>
             </details>
             <textarea id="presets-toml" readonly hidden spellcheck="false" wrap="off"
@@ -3493,47 +3597,27 @@ function initializeTapSelection() {
 }
 
 /* ============================================================================
- * Comparison: two maps side by side (one above the other in portrait) that share
- * everything but the date range, e.g. to compare two years.
+ * Map state: the view, background map, activity types, selection and the rest,
+ * read (currentMapState) and set (applyMapState) as plain data. It is remembered
+ * per browser, so a reload shows the map as it was left; the comparison passes
+ * it between its two maps and to and from the single map.
  *
- * The page opened with "?compare" is only a shell (initializeComparisonShell): it
- * drops its own map and shows this page twice, in two iframes of its origin. Each
- * frame is the whole map with its own viewport, so the layout works unchanged.
- * The first ("?pane=primary") has all the controls; the second ("?pane=secondary")
- * shows only its date panel, though it can be panned and zoomed too. A pane
- * reports which part of its state changed (notifyComparison); the shell reads that
- * part (comparisonState) and sets it on the other pane (applyComparisonState),
- * whose resulting events are not reported back. The dates are never passed on,
- * except once, when the second map opens with the first one's range. A selection
- * shows on both maps, each with its own summary.
- *
- * Each pane loads the data and tiles itself; where the servers let the browser
- * cache them, the second pane gets them from the cache. The state goes from the single
- * map to the comparison and back through sessionStorage (takeComparisonHandoff).
+ * Every change to a part of the state is reported to onStateChange, which saves
+ * the remembered parts (MAP_STATE_PARTS, debounced) and tells the other map of a
+ * comparison. The display settings and the date preset are remembered on their
+ * own (DISPLAY_SETTINGS_STORAGE_KEY, DATE_PRESET_STORAGE_KEY); a hand-picked date
+ * range is not, and neither is the menu fold.
  * ========================================================================== */
-const COMPARISON_HANDOFF_KEY = 'activitiesMap.comparisonHandoff';
-// The parts of the state both maps share; 'dates' is the one they don't.
-const COMPARISON_PARTS = ['view', 'tiles', 'types', 'display', 'selection', 'fold'];
-const COMPARISON_ICON =
-    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
-    '<rect x="2.5" y="4.5" width="8.5" height="15" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
-    '<rect x="13" y="4.5" width="8.5" height="15" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+const MAP_STATE_STORAGE_KEY = 'activitiesMap.mapState';
+const MAP_STATE_PARTS = ['view', 'tiles', 'types', 'selection'];
+const MAP_STATE_SAVE_DELAY_MS = 300;
 
-let comparisonPaneAnnounced = false;  // the shell has this pane's state functions
-let comparisonApplying = false;       // setting the other pane's state: not reported back
-
-/** Tell the shell that a part of this pane's state changed, unless the shell set it. */
-function notifyComparison(part) {
-    if (!COMPARISON_PANE || !comparisonPaneAnnounced || comparisonApplying) return;
-    try {
-        window.parent.onComparisonPaneChange(COMPARISON_PANE, part);
-    } catch (e) {
-        // Not inside a comparison shell (opened with "?pane=" by hand).
-    }
-}
+let mapStateRestored = false;  // the remembered state is set: changes from now on are saved
+let mapStateSaveTimer = null;
+let applyingMapState = false;  // set from outside (the other map of a comparison): not reported back
 
 /** The parts given of this map's state, as plain data. */
-function comparisonState(parts) {
+function currentMapState(parts) {
     const state = {};
     if (parts.includes('view')) {
         const c = mapInstance.getCenter();
@@ -3560,8 +3644,8 @@ function isCurrentView(center, zoom) {
     return wanted.distanceTo(mapInstance.project(mapInstance.getCenter(), zoom)) < 0.5;
 }
 
-/** Show the other map's selection: a new one is drawn, a resized one moves along. */
-function applyComparisonSelection(selection) {
+/** Show a selection from the state: a new one is drawn, a resized one moves along. */
+function applySelectionState(selection) {
     if (!selection) {
         if (areaSelectBounds) clearSelection();
         return;
@@ -3581,27 +3665,137 @@ function applyComparisonSelection(selection) {
     }
 }
 
-/** Set what the state has (from comparisonState), through the controls' own setters. */
-function applyComparisonState(state) {
-    comparisonApplying = true;
+/** Set what the state has (from currentMapState), through the controls' own setters. */
+function applyMapState(state) {
+    applyingMapState = true;
     try {
         if (state.tiles) setBaseLayer(state.tiles);
         if (state.display) setDisplaySettings(state.display);
-        if (state.types) {
+        if (Array.isArray(state.types)) {
             Object.keys(layerGroups).forEach(name => setCategoryShown(name, state.types.includes(name)));
         }
         if (state.date_range) setDateRange(state.date_range);
-        if (state.center && !isCurrentView(state.center, state.zoom)) {
+        if (Array.isArray(state.center) && Number.isFinite(state.zoom) &&
+            !isCurrentView(state.center, state.zoom)) {
             mapInstance.setView(state.center, state.zoom, { animate: false });
         }
         if (state.selection_mode && state.selection_mode !== areaSelectMode) {
             areaSelectMode = state.selection_mode;
             refreshSelectionDialogIfOpen();
         }
-        if ('selection' in state) applyComparisonSelection(state.selection);
+        if ('selection' in state) applySelectionState(state.selection);
         if ('folded' in state && state.folded !== mapControlsFolded) toggleMapControls();
     } finally {
-        comparisonApplying = false;
+        applyingMapState = false;
+    }
+}
+
+/** The state remembered from the last visit; the second map of a comparison has none. */
+function loadMapState() {
+    if (COMPARISON_PANE === 'secondary') return null;
+    try {
+        const state = JSON.parse(localStorage.getItem(MAP_STATE_STORAGE_KEY) || 'null');
+        return state && typeof state === 'object' ? state : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function saveMapState() {
+    clearTimeout(mapStateSaveTimer);
+    mapStateSaveTimer = null;
+    try {
+        localStorage.setItem(MAP_STATE_STORAGE_KEY, JSON.stringify(currentMapState(MAP_STATE_PARTS)));
+    } catch (e) {
+        // Storage blocked (private mode, previews): the state just isn't remembered.
+    }
+}
+
+/** A part of the state changed (see MAP_STATE_PARTS and COMPARISON_PARTS). */
+function onStateChange(part) {
+    // Panning fires many changes; one save after they stop.
+    if (mapStateRestored && COMPARISON_PANE !== 'secondary' && MAP_STATE_PARTS.includes(part) &&
+        !mapStateSaveTimer) {
+        mapStateSaveTimer = setTimeout(saveMapState, MAP_STATE_SAVE_DELAY_MS);
+    }
+    notifyComparison(part);
+}
+
+// A reload right after a change still finds it.
+window.addEventListener('pagehide', function() {
+    if (mapStateSaveTimer) saveMapState();
+});
+
+/**
+ * Set the remembered state when the page opens; the state handed over by a
+ * comparison (or to one) takes its place. From then on changes are saved.
+ */
+function restoreMapState(state) {
+    if (state) {
+        try {
+            applyMapState(state);
+        } catch (e) {
+            console.warn('Could not restore the map state:', e);
+        }
+    }
+    mapStateRestored = true;
+    // The other parts report their changes from their setters.
+    mapInstance.on('move zoomend', () => onStateChange('view'));
+    mapInstance.on('baselayerchange', () => onStateChange('tiles'));
+    mapInstance.on('overlayadd overlayremove', () => onStateChange('types'));
+}
+
+/** Forget everything remembered and open the map as it starts (the button in the display settings). */
+function resetMapState() {
+    mapStateRestored = false;  // nothing more is saved on the way out
+    clearTimeout(mapStateSaveTimer);
+    mapStateSaveTimer = null;
+    try {
+        [MAP_STATE_STORAGE_KEY, DISPLAY_SETTINGS_STORAGE_KEY, DATE_PRESET_STORAGE_KEY]
+            .forEach(key => localStorage.removeItem(key));
+    } catch (e) {
+        // Storage blocked: there is nothing remembered to forget.
+    }
+    // In a comparison, its shell: both maps start again.
+    window.parent.location.reload();
+}
+
+/* ============================================================================
+ * Comparison: two maps side by side (one above the other in portrait) that share
+ * everything but the date range, e.g. to compare two years.
+ *
+ * The page opened with "?compare" is only a shell (initializeComparisonShell): it
+ * drops its own map and shows this page twice, in two iframes of its origin. Each
+ * frame is the whole map with its own viewport, so the layout works unchanged.
+ * The first ("?pane=primary") has all the controls; the second ("?pane=secondary")
+ * shows only its date panel, though it can be panned and zoomed too. A pane
+ * reports which part of its state changed (notifyComparison); the shell reads that
+ * part (currentMapState) and sets it on the other pane (applyMapState),
+ * whose resulting events are not reported back. The dates are never passed on,
+ * except once, when the second map opens with the first one's range. A selection
+ * shows on both maps, each with its own summary.
+ *
+ * Each pane loads the data and tiles itself; where the servers let the browser
+ * cache them, the second pane gets them from the cache. The state goes from the single
+ * map to the comparison and back through sessionStorage (takeComparisonHandoff).
+ * ========================================================================== */
+const COMPARISON_HANDOFF_KEY = 'activitiesMap.comparisonHandoff';
+// The parts of the state both maps share; 'dates' is the one they don't.
+const COMPARISON_PARTS = ['view', 'tiles', 'types', 'display', 'selection', 'fold'];
+const COMPARISON_ICON =
+    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+    '<rect x="2.5" y="4.5" width="8.5" height="15" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+    '<rect x="13" y="4.5" width="8.5" height="15" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+
+let comparisonPaneAnnounced = false;  // the shell has this pane's state functions
+
+/** Tell the shell that a part of this pane's state changed, unless the shell set it. */
+function notifyComparison(part) {
+    if (!COMPARISON_PANE || !comparisonPaneAnnounced || applyingMapState) return;
+    try {
+        window.parent.onComparisonPaneChange(COMPARISON_PANE, part);
+    } catch (e) {
+        // Not inside a comparison shell (opened with "?pane=" by hand).
     }
 }
 
@@ -3627,27 +3821,22 @@ function takeComparisonHandoff() {
 }
 
 function openComparison() {
-    handOverComparisonState(comparisonState([...COMPARISON_PARTS, 'dates']));
+    handOverComparisonState(currentMapState([...COMPARISON_PARTS, 'dates']));
     location.assign(`${location.pathname}?compare`);
 }
 
 /** Back to a single map, as the first map of the comparison was. */
 function closeComparison() {
-    handOverComparisonState(comparisonState([...COMPARISON_PARTS, 'dates']));
+    handOverComparisonState(currentMapState([...COMPARISON_PARTS, 'dates']));
     window.parent.location.assign(window.parent.location.pathname);
 }
 
 /**
- * A pane's part: report the map's changes and, on a single map or the first map of
- * a comparison, the button that opens or closes it. The second map of a comparison
- * hides every control but its date panel.
+ * On a single map or the first map of a comparison, the button that opens or
+ * closes it. The second map of a comparison hides every control but its date panel.
  */
 function initializeComparison() {
     if (!mapInstance) return;
-    mapInstance.on('move zoomend', () => notifyComparison('view'));
-    mapInstance.on('baselayerchange', () => notifyComparison('tiles'));
-    mapInstance.on('overlayadd overlayremove', () => notifyComparison('types'));
-
     if (COMPARISON_PANE === 'secondary') {
         const style = document.createElement('style');
         style.textContent = `
@@ -3676,7 +3865,7 @@ function announceComparisonPane() {
     if (!COMPARISON_PANE) return;
     comparisonPaneAnnounced = true;
     try {
-        window.parent.onComparisonPaneReady(COMPARISON_PANE, { state: comparisonState, apply: applyComparisonState });
+        window.parent.onComparisonPaneReady(COMPARISON_PANE, { state: currentMapState, apply: applyMapState });
     } catch (e) {
         console.warn('Not inside a comparison shell:', e);
     }

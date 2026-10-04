@@ -237,7 +237,7 @@ becomes a polyline in its category colour.
   activity-type selectors below it. The top-right column holds a menu button, the
   presets button, the area-selection button, the save-image button, the display-settings
   button, the comparison button and the zoom bar (`arrangeTopRightControls`); the menu button hides and shows all
-  the other controls. The presets, save-image and display-settings panels share a place
+  the other controls and the selection dialog (`placeSelectionDialog`). The presets, save-image and display-settings panels share a place
   left of the column, so opening one closes the others (`closeMapDialogs`).
 - **Display settings** (`initializeDisplaySettings`). The gear button opens a dialog
   with four settings, all remembered in `localStorage` (`activitiesMap.displaySettings`).
@@ -248,7 +248,10 @@ becomes a polyline in its category colour.
   *Map opacity* (20–100 %) sets the opacity of Leaflet's `tilePane` over a white map
   background. That fades every base layer but not the tracks, the Mapy.com logo or the
   attribution. *Show direction* (default on) turns the chevrons and start/finish markers
-  of highlighted tracks on or off (`applyShowDirection`). The dialog stays open while the map is used; the gear, its close
+  of highlighted tracks on or off (`applyShowDirection`). The dialog's controls all go
+  through `setDisplaySettings`, like presets do. Below them, *Reset to defaults*
+  (`resetMapState`) forgets the remembered state (see "Remembered state") and reloads
+  the page. The dialog stays open while the map is used; the gear, its close
   button, Escape or folding the controls closes it.
 - **Background and activity types** (`initializeLayerSelects`). A `<select>` picks the
   background map, and a multi-select dropdown with counts and All/None shortcuts picks
@@ -338,15 +341,20 @@ The handles go with the rectangle when a new one is drawn or the selection is cl
 The resulting dialog lists the activities in the rectangle with totals per category and
 overall (count, distance, time), a switch between tracks *partially* and *fully* inside
 the rectangle, and per-row highlight, popup and Garmin Connect links. Opening a popup
-from a row does not move the map. The selection is computed from the polylines currently
+from a row does not move the map. *Zoom to selection* (`zoomToSelection`, also behind
+*Show selection* in the save-image panel) fits the rectangle to the map with
+`SELECTION_ZOOM_PADDING_PX` (12 px) around it. It sets `zoomSnap` to 0 for that one
+`fitBounds`, so the zoom may stop between whole levels and the rectangle fills the map;
+the next zoom by button or wheel snaps back to a whole level. The selection is computed from the polylines currently
 on the map, so it follows the date and category filters, and it is recalculated
-(debounced) whenever they change while the rectangle is shown.
+(debounced) whenever they change while the rectangle is shown, and when a category's
+tracks are drawn (a selection restored at start-up comes before the data).
 
 ### Saving an image
 
 The camera button (`initializeImageExport`) opens the "Save image" panel, a
-`.map-dialog` like the display settings; the selection dialog is hidden while it or the
-presets panel is open (`placeSelectionDialog`). It saves the area selection, or the
+`.map-dialog` like the display settings; the selection dialog is hidden while it, the
+presets or the display-settings panel is open (`placeSelectionDialog`). It saves the area selection, or the
 current view when there is none (`imageExportBounds`; the panel follows the map's
 `moveend`). A page cannot screenshot itself, so the area is drawn again on a canvas
 (`saveMapImage`, which takes a job from `imageExportJob` of bounds, zoom, base layer,
@@ -404,6 +412,26 @@ whose image at `image-zoom` is over the limits (`image_size`, computed like the 
 does; no tile limit with `tiles = "No map"`) is kept with a warning. A leftover
 `[[image-presets]]` section is reported, not converted.
 
+### Remembered state
+
+A reload shows the map as it was left. `currentMapState(parts)` reads the state as plain
+data and `applyMapState(state)` sets it through the controls' own setters; the
+comparison uses the same pair. Every change reports its part to `onStateChange`: `view`
+(`move`/`zoomend`), `tiles` (`baselayerchange`), `types` (`overlayadd`/`overlayremove`),
+`display` (`setDisplaySettings`), `selection` (drawn, resized, cleared or its mode
+changed) and `fold` (`toggleMapControls`). The parts in `MAP_STATE_PARTS` (view, tiles,
+types, selection and its mode) are saved to `localStorage` (`activitiesMap.mapState`),
+300 ms after the last change, or on `pagehide` when a save is still waiting. The display
+settings and the date preset have their own keys, as above. A hand-picked date range and
+the menu fold are not remembered.
+
+At start-up `loadManifest` takes the state handed over by a comparison, else the
+remembered one, and downloads first the categories that state shows rather than those
+shown on load by the config. Once the controls are set up, `restoreMapState` sets it;
+only then are changes saved, so setting up does not overwrite the remembered state.
+*Reset to defaults* removes all three keys and reloads the page (in a comparison, the
+shell). The second map of a comparison neither reads nor saves any of them.
+
 ### Comparison mode
 
 The comparison button (`initializeComparison`) opens the page again as
@@ -416,15 +444,12 @@ change. The second pane hides every control but its date panel, and has no selec
 handles. Its selection dialog shows only the summary: the mode switch, close and save
 buttons stay on the first map.
 
-The shell keeps the panes in step: everything but the dates. A pane reports a change with
-`notifyComparison(part)`. The parts are `view` (`move`/`zoomend`), `tiles`
-(`baselayerchange`), `types` (`overlayadd`/`overlayremove`), `display`
-(`setDisplaySettings`, which the dialog now goes through too), `selection` (drawn, resized,
-cleared or its mode changed) and `fold` (`toggleMapControls`). The shell
-(`onComparisonPaneChange`) reads that part of the pane's state (`comparisonState`) and sets
-it on the other pane (`applyComparisonState`), through the controls' own setters. Changes
-made while applying are not reported back (`comparisonApplying`), and a view the map
-already shows is not set again, so the panes don't echo each other. The functions are
+The shell keeps the panes in step: everything but the dates. `onStateChange` passes each
+change on to the shell (`notifyComparison`), with the parts listed under "Remembered
+state". The shell (`onComparisonPaneChange`) reads that part of the pane's state
+(`currentMapState`) and sets it on the other pane (`applyMapState`). Changes made while
+applying are not reported back (`applyingMapState`), and a view the map already shows is
+not set again, so the panes don't echo each other. The functions are
 reached directly, as the frames share the shell's origin. Top-level `let` variables are
 not properties of `window`, so each pane hands the shell its `state`/`apply` functions in
 `announceComparisonPane`.
@@ -435,8 +460,8 @@ neither reads nor saves the remembered date preset. A preset applied on the firs
 changes its own dates, and its other parts reach the second map as ordinary changes.
 
 The state goes from the single map into the comparison and back through
-`sessionStorage` (`handOverComparisonState`, `takeComparisonHandoff`, read once after the
-controls are set up): opening the comparison passes the single map's state to the first
+`sessionStorage` (`handOverComparisonState`, `takeComparisonHandoff`, read once at
+start-up in place of the remembered state): opening the comparison passes the single map's state to the first
 pane, and closing it passes the first pane's state to the single map.
 
 Each pane loads its own copy of the activity data and draws its own tracks, so a

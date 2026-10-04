@@ -43,6 +43,8 @@ remote-filename = "index.html"
 # You can force using a specific point by putting an override into config-local.toml, e.g. [50.08, 14.44] for Prague.
 center-point = []
 # Initial zoom of the map. Default is 8.
+# A browser that opened the map before shows the view it was left at instead; "Reset to
+# defaults" in the display settings brings back this one.
 zoom-start = 8
 # If you want to use map tiles from Mapy.com (formerly Mapy.cz), put your personal API key as an override in config-local.toml.
 # See https://developer.mapy.com/en/rest-api-mapy-cz/api-key/

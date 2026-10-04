@@ -78,7 +78,8 @@ The rectangle button in the top-right corner turns on area selection. Drag a box
 map (with the mouse, or one finger on a touch screen) to list the activities inside it,
 with totals of distance, time and count per category and overall. Drag the handles on
 its corners and sides to resize it; the list follows as you drag. You can count tracks
-that are fully inside the box or just pass through it. Only the activities currently
+that are fully inside the box or just pass through it. **Zoom to selection** fits the
+box to the screen, with a little room around it. Only the activities currently
 shown are counted, and the list updates live as you change the filters. Area selection
 can be turned off with `enable-area-selection = false` under `[activities]`.
 
@@ -168,7 +169,10 @@ trails:
 - **Show direction** turns the arrows and start/finish markers on a highlighted track
   on or off.
 
-The browser remembers these settings.
+The browser remembers these settings, and the rest of the map too: on a reload you get
+the view, background map, activity types, area selection and time range you left (a
+hand-picked date range is not kept, so new activities don't stay hidden). **Reset to
+defaults** at the bottom of the dialog forgets all of it and opens the map as configured.
 
 ### Comparing two date ranges
 
