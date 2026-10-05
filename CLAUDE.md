@@ -14,6 +14,11 @@ polished app — a single user runs it by hand.
 ## How to run
 
 - Entry point: `python activities-map.py`.
+- Setup: `python3 install.py` creates `venv/`, installs requirements and writes
+  `config-local.toml` from a few questions (tile keys, FTP), then logs in and does the
+  first run. Its first step must stay stdlib-only and parse on old Python 3, so an old
+  interpreter still gets the "needs 3.12" message. It edits `config-local.toml` line by
+  line (`set_toml_value`) and keeps the user's comments.
 - Behaviour is driven entirely by config. `config-default.toml` is the
   committed, documented baseline; `config-local.toml` (git-ignored) holds
   personal overrides and is merged recursively over the default.

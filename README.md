@@ -206,14 +206,40 @@ second map's tiles, unless the tile server forbids caching.
 ```
 git clone https://github.com/MareenCZE/garmin-activities-map.git
 cd garmin-activities-map
-python -m venv venv
+python3 install.py              # on Windows: py install.py
+```
+
+The installer sets everything up and asks only a few questions, offering a default for each
+answer:
+
+1. It finds Python 3.12 or newer (and tells you how to install it if there is none),
+   creates a virtual environment in `venv/` and installs the libraries.
+2. It asks for the optional API keys of the CARTO and Mapy.com background maps.
+3. It asks whether to publish the map to your website. If you say yes, it asks for the
+   FTP server and login, saves the password encrypted, and can test the connection.
+4. It logs in to Garmin Connect, downloads your activities, builds the map and opens it
+   in your browser.
+
+Your answers go to `config-local.toml`. Run the installer again at any time to change them:
+it reuses the virtual environment, keeps the answers you confirm with Enter and skips the
+Garmin login while the saved token still works.
+
+<details>
+<summary>Manual installation</summary>
+
+```
+python3 -m venv venv
 source venv/bin/activate        # on Windows: venv\Scripts\activate
 pip install -r requirements.txt
+python activities-map.py
 ```
+
+Then configure the tool as described below.
+</details>
 
 ### Configuration
 
-All settings live in two TOML files:
+The installer covers the usual settings. Everything else is set by hand. All settings live in two TOML files:
 
 - `config-default.toml` documents every setting with its default value. Do not edit it.
 - `config-local.toml` (create it; it is git-ignored) holds your personal values and
@@ -258,6 +284,8 @@ Activity types that match no category go into "Other". A type's key (e.g.
 
 #### Publishing via FTP
 
+The installer sets up publishing. To do it by hand:
+
 1. Copy the `[ftp]` section from `config-default.toml` to `config-local.toml` and fill
    in your host, user, remote path and file name. Put the password in as plain text for
    now.
@@ -278,8 +306,11 @@ with `config-local.toml`; without it the password has to be encrypted again.
 ## Usage
 
 ```
-python activities-map.py
+venv/bin/python activities-map.py      # on Windows: venv\Scripts\python activities-map.py
 ```
+
+Or activate the virtual environment first (`source venv/bin/activate`) and run
+`python activities-map.py`.
 
 With the default configuration, a run downloads new activities, generates the map and
 uploads it. Open `output/activities_map.html` in a browser, or the published page on
@@ -425,8 +456,3 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
 - Articles on visualizing activities:
   [Analysis and visualization of activities from Garmin Connect](https://medium.com/@azholud/analysis-and-visualization-of-activities-from-garmin-connect-b3e021c62472),
   [Interesting heatmaps using Python Folium](https://medium.com/@vinodvidhole/interesting-heatmaps-using-python-folium-ee41b118a996)
-
-## Roadmap
-
-- **Installer.** Replace the manual installation steps in this README (venv,
-  `pip install`, first configuration) with an installer script.
