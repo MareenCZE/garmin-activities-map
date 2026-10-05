@@ -80,7 +80,9 @@ with totals of distance, time and count per category and overall. Drag the handl
 its corners and sides to resize it; the list follows as you drag. You can count tracks
 that are fully inside the box or just pass through it. **Zoom to selection** fits the
 box to the screen, with a little room around it. Only the activities currently
-shown are counted, and the list updates live as you change the filters. Area selection
+shown are counted, and the list updates live as you change the filters. A tap on the map
+closes the selection (a tap on a track also opens it); moving the map or resizing the
+box doesn't. Area selection
 can be turned off with `enable-area-selection = false` under `[activities]`.
 
 ![Area selection with totals](images/area-selection.png)
@@ -170,7 +172,7 @@ trails:
   on or off.
 
 The settings apply as you change them and stay open while you move or zoom the map; tap
-anywhere outside them to close them.
+anywhere outside them to close them. The presets and save-image panels close the same way.
 
 The browser remembers these settings, and the rest of the map too: on a reload you get
 the view, background map, activity types, area selection and time range you left (a

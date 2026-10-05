@@ -1591,9 +1591,10 @@ function initializeLayerSelects() {
     typeButton.addEventListener('click', function() {
         setMenuOpen(!typeMenu.classList.contains('open'));
     });
-    // Close on a press anywhere outside the dropdown, or on Escape.
+    // Close on a press anywhere outside the dropdown (the tiles select and the
+    // display-settings gear beside it included), or on Escape.
     document.addEventListener('pointerdown', function(e) {
-        if (!container.contains(e.target)) setMenuOpen(false);
+        if (!typeWrap.contains(e.target) && !typeMenu.contains(e.target)) setMenuOpen(false);
     });
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') setMenuOpen(false);
@@ -1845,43 +1846,66 @@ function placeDisplaySettingsDialog() {
 }
 
 // A press that moves less than this is a tap, not a drag of the map.
-const DISPLAY_SETTINGS_TAP_SLOP_PX = 8;
+const TAP_SLOP_PX = 8;
+
+// The panels a tap outside closes: { isOpen(), close(), inside(target), passTap(e) }.
+// When passTap says so, the closing tap also does what it would have (picks a track).
+const tapOutsideClosables = [];
 
 /**
- * A tap or click outside the display settings closes them, like the types menu,
- * but dragging, pinching or zooming the map does not: a setting can be judged
- * while the map moves. A tap on the map only closes them; it doesn't also pick
- * a track (the click is swallowed). One on another control still works it.
+ * A tap or click outside a panel closes it, like the types menu: the display
+ * settings, presets, save image and the selection list. Dragging, pinching or
+ * zooming the map does not, so a change can be judged while the map moves, and
+ * neither does a press on the zoom bar, an open popup or a selection handle.
+ * A tap on the map only closes a panel; it doesn't also pick a track (the click
+ * is swallowed). It closes the selection and, landing on a track, picks that
+ * too (passTap); landing elsewhere it leaves an open popup be. One on
+ * another control closes the panel and works it.
  */
-function closeDisplaySettingsOnTapOutside(dialog, button) {
-    const pressed = new Set();   // pointers down outside, in the current gesture
-    let press = null;            // the gesture's first press: { id, x, y, multi }
+function closeOnTapOutside(closable) {
+    tapOutsideClosables.push(closable);
+    if (tapOutsideClosables.length === 1) listenForTapsOutside();
+}
+
+/** Whether an element is the map itself (tracks, tiles), not one of its controls. */
+function onMapSurface(target) {
+    const map = mapInstance.getContainer();
+    return map.contains(target) && !(target.closest && target.closest('.leaflet-control'));
+}
+
+function listenForTapsOutside() {
+    const pressed = new Set();   // pointers down, in the current gesture
+    let press = null;            // the gesture's first press: { id, x, y, multi, closables }
     let swallowClickUntil = 0;
 
-    function outside(target) {
-        return !dialog.contains(target) && !button.contains(target)
-            && !(target.closest && target.closest('.leaflet-control-zoom'));
+    function ignored(target) {
+        return !!(target.closest &&
+            target.closest('.leaflet-control-zoom, .leaflet-popup, .area-select-handle'));
     }
-    function onMapSurface(target) {
-        const map = mapInstance.getContainer();
-        return map.contains(target) && !(target.closest && target.closest('.leaflet-control'));
-    }
-
     document.addEventListener('pointerdown', function(e) {
-        if (!displaySettingsOpen() || !outside(e.target)) return;
         pressed.add(e.pointerId);
-        if (press) press.multi = true;   // a second finger: a pinch
-        else press = { id: e.pointerId, x: e.clientX, y: e.clientY, multi: false };
+        if (press) {
+            press.multi = true;   // a second finger: a pinch
+            return;
+        }
+        // Only the panels open when the gesture starts: closing one may show another.
+        const closables = ignored(e.target) ? [] :
+            tapOutsideClosables.filter(c => c.isOpen() && !c.inside(e.target));
+        press = { id: e.pointerId, x: e.clientX, y: e.clientY, multi: false, closables };
     }, true);
 
     function onPointerEnd(e) {
         if (!pressed.delete(e.pointerId)) return;
-        const tap = press && e.type === 'pointerup' && e.pointerId === press.id && !press.multi
-            && Math.hypot(e.clientX - press.x, e.clientY - press.y) < DISPLAY_SETTINGS_TAP_SLOP_PX;
+        const gesture = press;
         if (pressed.size === 0) press = null;
-        if (!tap || !displaySettingsOpen()) return;
-        setDisplaySettingsOpen(false);
-        swallowClickUntil = onMapSurface(e.target) ? Date.now() + 500 : 0;
+        const tap = gesture && e.type === 'pointerup' && e.pointerId === gesture.id && !gesture.multi
+            && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) < TAP_SLOP_PX;
+        if (!tap) return;
+        const open = gesture.closables.filter(c => c.isOpen());
+        if (!open.length) return;
+        const swallow = open.some(c => !(c.passTap && c.passTap(e)));
+        open.forEach(c => c.close());
+        swallowClickUntil = swallow && onMapSurface(e.target) ? Date.now() + 500 : 0;
     }
     document.addEventListener('pointerup', onPointerEnd, true);
     document.addEventListener('pointercancel', onPointerEnd, true);
@@ -1893,6 +1917,18 @@ function closeDisplaySettingsOnTapOutside(dialog, button) {
         e.stopPropagation();
         e.preventDefault();
     }, true);
+}
+
+/** A top-right style panel and its button, closed by a tap outside both. */
+function closePanelOnTapOutside(dialog, buttonSelector, isOpen, setOpen) {
+    closeOnTapOutside({
+        isOpen,
+        close: () => setOpen(false),
+        inside: function(target) {
+            const button = document.querySelector(buttonSelector);
+            return dialog.contains(target) || (!!button && button.contains(target));
+        },
+    });
 }
 
 function displaySettingsOpen() {
@@ -2057,7 +2093,7 @@ function initializeDisplaySettings() {
     thinToggle.addEventListener('change', () => setDisplaySettings({ thinLines: thinToggle.checked }));
     opacitySlider.addEventListener('input', () => setDisplaySettings({ mapOpacity: opacitySlider.value }));
     directionToggle.addEventListener('change', () => setDisplaySettings({ showDirection: directionToggle.checked }));
-    closeDisplaySettingsOnTapOutside(dialog, button);
+    closePanelOnTapOutside(dialog, '.leaflet-control-display-settings', displaySettingsOpen, setDisplaySettingsOpen);
     dialog.querySelector('#reset-map-state').onclick = resetMapState;
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') setDisplaySettingsOpen(false);
@@ -3257,6 +3293,7 @@ function initializeImageExport() {
         if (job) saveMapImage(job);
     };
     dialog.querySelector('#image-export-show').onclick = zoomToSelection;
+    closePanelOnTapOutside(dialog, '.leaflet-control-image-export', imageExportOpen, setImageExportOpen);
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') setImageExportOpen(false);
     });
@@ -3523,6 +3560,7 @@ function initializePresets() {
 
     dialog.querySelector('#presets-close').onclick = () => setPresetsOpen(false);
     dialog.querySelector('#presets-copy').onclick = copyCurrentStateAsPreset;
+    closePanelOnTapOutside(dialog, '.leaflet-control-presets', presetsOpen, setPresetsOpen);
     dialog.querySelectorAll('.preset-parts input').forEach(function(box) {
         box.onchange = updatePresetsControls;
     });
@@ -3643,8 +3681,9 @@ function onMapTap(e) {
     // Leave clicks alone while the area tool is armed, and ignore the click the
     // browser fires at the end of a rectangle drag.
     if (areaSelectActive || Date.now() - areaSelectEndedAt < 500) return;
-    // A new tap replaces the previous tap's list. A rectangle selection stays
-    // up: it is a deliberate tool, closed with its own button.
+    // A tap while the list shows has just dropped the selection
+    // (initializeTapSelection). While it is hidden, behind a panel or folded
+    // away, a new tap replaces a tap's list and a rectangle selection stays up.
     if (tapSelectLatLng) clearSelection();
 
     const tolerancePx = tapTolerancePx(e);
@@ -3663,6 +3702,26 @@ function onMapTap(e) {
 function initializeTapSelection() {
     if (!mapInstance) return;
     mapInstance.on('click', onMapTap);
+    // A tap on the map drops the selection, rectangle or tap, but resizing the
+    // rectangle or moving the map keeps it (closeOnTapOutside). The controls
+    // don't: the list follows their filters. Only where the list can close it:
+    // on the second map of a comparison the rectangle is the first map's.
+    // A tap on a track then goes on to onMapTap and opens it. One elsewhere is
+    // swallowed, so it doesn't also close a popup opened from the list.
+    closeOnTapOutside({
+        isOpen: function() {
+            const dialog = document.getElementById('area-selection-dialog');
+            return !!dialog && dialog.style.display !== 'none' && !!dialog.querySelector('#area-sel-close');
+        },
+        close: clearSelection,
+        inside: function(target) {
+            return !onMapSurface(target);
+        },
+        passTap: function(e) {
+            const latlng = mapInstance.mouseEventToLatLng(e);
+            return computeTapSelection(latlng, tapTolerancePx({ originalEvent: e })).length > 0;
+        },
+    });
 }
 
 /* ============================================================================

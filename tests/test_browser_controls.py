@@ -406,3 +406,15 @@ def test_tap_on_another_control_closes_settings_and_works_it(page):
     page.click("#type-filter-button")
     assert page.locator("#display-settings-dialog").is_hidden()
     assert page.locator("#type-filter-menu").is_visible()
+
+
+def test_opening_settings_closes_the_types_menu(page):
+    page.click("#type-filter-button")
+    assert page.locator("#type-filter-menu").is_visible()
+    page.click(".leaflet-control-display-settings")
+    assert page.locator("#type-filter-menu").is_hidden()
+    assert page.get_attribute("#type-filter-button", "aria-expanded") == "false"
+    # Closing the settings with the gear doesn't bring it back.
+    page.click(".leaflet-control-display-settings")
+    assert page.locator("#display-settings-dialog").is_hidden()
+    assert page.locator("#type-filter-menu").is_hidden()

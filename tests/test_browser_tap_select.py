@@ -358,14 +358,18 @@ def test_next_map_tap_closes_tap_list(served_map, browser, where):
     lat = SOLO_LAT if where == "track" else 0.0
     pt = _page_point(page, lat, 0.005)
     page.touchscreen.tap(pt["x"], pt["y"])
-    if where == "track":
-        assert "Solo" in _popup_text(page)
     page.wait_for_function(
         "() => !document.getElementById('area-selection-dialog')", timeout=5000)
     assert page.evaluate("() => tapSelectLatLng") is None
+    # The same tap picks the track it lands on.
+    if where == "track":
+        assert "Solo" in _popup_text(page)
+    else:
+        page.wait_for_timeout(200)
+        assert page.locator(".leaflet-popup").count() == 0
 
 
-def test_single_match_tap_keeps_rectangle_list(served_map, browser):
+def test_map_tap_drops_rectangle_selection(served_map, browser):
     page = _open(browser, served_map, touch=False)
     start = _page_point(page, SOLO_LAT + 0.005, -0.002)
     end = _page_point(page, TWIN_LAT - 0.005, 0.012)
@@ -380,8 +384,11 @@ def test_single_match_tap_keeps_rectangle_list(served_map, browser):
     page.wait_for_timeout(600)  # past the post-drag click guard
     pt = _page_point(page, SOLO_LAT, 0.005)
     page.mouse.click(pt["x"], pt["y"])
+    # The click drops the selection and opens the track it lands on.
     assert "Solo" in _popup_text(page)
-    assert "Selection" in dialog.inner_text()
+    assert dialog.count() == 0
+    assert page.evaluate("() => areaSelectBounds") is None
+    assert page.locator(".area-select-handle").count() == 0
 
 
 def _popup_box(page):
@@ -457,3 +464,72 @@ def test_popup_can_be_dragged_aside(served_map, browser, touch):
     assert "Solo" in _popup_text(page)
     assert _popup_box(page) == pytest.approx(before, abs=1)
     assert tip.is_visible()
+
+
+
+TWIN_BOX = f"L.latLngBounds([[{TWIN_LAT - 0.003}, -0.002], [{TWIN_LAT + 0.003}, 0.012]])"
+
+
+@pytest.mark.parametrize("touch", [False, True])
+def test_rectangle_selection_survives_panning_resizing_and_the_controls(served_map, browser, touch):
+    page = _open(browser, served_map, touch=touch)
+    page.evaluate(f"() => setAreaSelection({TWIN_BOX})")
+    dialog = page.locator("#area-selection-dialog")
+    dialog.wait_for(timeout=5000)
+    tap = page.touchscreen.tap if touch else page.mouse.click
+
+    # Panning the map.
+    empty = _page_point(page, 0.0, 0.005)
+    _drag(page, touch, empty["x"], empty["y"], 60, 40)
+    page.wait_for_timeout(300)
+    assert dialog.count() == 1
+
+    # Resizing the rectangle by a handle, and a press on a handle that doesn't move it.
+    before = page.evaluate("() => areaSelectBounds.getEast()")
+    handle = page.locator(".area-select-handle-e").bounding_box()
+    _drag(page, touch, handle["x"] + handle["width"] / 2, handle["y"] + handle["height"] / 2, 40, 0)
+    page.wait_for_timeout(300)
+    assert dialog.count() == 1
+    assert page.evaluate("() => areaSelectBounds.getEast()") > before
+    handle = page.locator(".area-select-handle-e").bounding_box()
+    tap(handle["x"] + handle["width"] / 2, handle["y"] + handle["height"] / 2)
+    page.wait_for_timeout(300)
+    assert dialog.count() == 1
+
+    # The controls: the list follows their filters.
+    page.click("#type-filter-button")
+    page.click("#type-filter-button")
+    assert dialog.count() == 1
+
+    if touch:
+        # A two-finger touch that doesn't move is not a tap either.
+        cdp = page.context.new_cdp_session(page)
+        points = [{"x": empty["x"], "y": empty["y"]}, {"x": empty["x"] + 80, "y": empty["y"]}]
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": points})
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+        page.wait_for_timeout(300)
+        assert dialog.count() == 1
+
+    # A tap on the map closes it.
+    empty = _page_point(page, SOLO_LAT + 0.004, 0.005)
+    tap(empty["x"], empty["y"])
+    page.wait_for_function("() => !document.getElementById('area-selection-dialog')", timeout=5000)
+    assert page.evaluate("() => areaSelectBounds") is None
+
+
+@pytest.mark.parametrize("touch", [False, True])
+def test_tap_beside_the_tracks_keeps_a_popup_opened_from_the_list(served_map, browser, touch):
+    page = _open(browser, served_map, touch=touch)
+    page.evaluate(f"() => setAreaSelection({TWIN_BOX})")
+    dialog = page.locator("#area-selection-dialog")
+    dialog.wait_for(timeout=5000)
+    row = dialog.locator(".area-sel-row").first.bounding_box()
+    tap = page.touchscreen.tap if touch else page.mouse.click
+    tap(row["x"] + 20, row["y"] + row["height"] / 2)
+    name = _popup_text(page)
+
+    empty = _page_point(page, 0.0, 0.005)
+    tap(empty["x"], empty["y"])
+    page.wait_for_function("() => !document.getElementById('area-selection-dialog')", timeout=5000)
+    page.wait_for_timeout(200)
+    assert page.locator(".leaflet-popup-content").inner_text() == name

@@ -213,3 +213,30 @@ def test_panels_take_turns_and_fold_away(page):
     page.click(".leaflet-control-toggle-menu")
     assert page.locator("#presets-dialog").is_hidden()
     assert not page.locator("#presets-bar").is_visible()
+
+
+
+@pytest.mark.parametrize("button, dialog", [
+    (".leaflet-control-presets", "#presets-dialog"),
+    (".leaflet-control-image-export", "#image-export-dialog"),
+])
+def test_panels_close_on_a_tap_outside_but_not_a_drag(page, button, dialog):
+    page.click(button)
+    panel = page.locator(dialog)
+    assert panel.is_visible()
+    # Moving or zooming the map, or working the panel, keeps it open.
+    page.mouse.move(300, 450)
+    page.mouse.down()
+    page.mouse.move(360, 400, steps=5)
+    page.mouse.up()
+    page.click(".leaflet-control-zoom-out")
+    page.locator(dialog).click(position={"x": 20, "y": 20})
+    assert panel.is_visible()
+    # A tap on the map closes it.
+    page.mouse.click(300, 450)
+    assert panel.is_hidden()
+    # So does one on another control, which still works it.
+    page.click(button)
+    page.click("#type-filter-button")
+    assert panel.is_hidden()
+    assert page.locator("#type-filter-menu").is_visible()

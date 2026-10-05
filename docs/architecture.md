@@ -242,9 +242,20 @@ becomes a polyline in its category colour.
   button, the comparison button and the zoom bar (`arrangeTopRightControls`); the menu button hides and shows all
   the other controls and the selection dialog (`placeSelectionDialog`). The presets and save-image panels share a place
   left of the column. The display-settings panel drops down from the tiles/types panel like
-  the types menu (`placeDisplaySettingsDialog`) and closes on a tap outside it, but not on a
-  drag, pinch or zoom of the map (`closeDisplaySettingsOnTapOutside`); a closing tap on the
-  map doesn't also pick a track. Only one panel is open at a time (`closeMapDialogs`).
+  the types menu (`placeDisplaySettingsDialog`). Only one panel is open at a time
+  (`closeMapDialogs`).
+- **Closing on a tap outside** (`closeOnTapOutside`). The display-settings, presets and
+  save-image panels close on a tap or click outside them and their button, and the
+  selection on a tap on the map. A press that moves `TAP_SLOP_PX` (8 px) or more, a
+  second finger (a pinch), and a press on the zoom bar, an open popup or a selection
+  handle are not taps, so the map can be panned and zoomed, and the rectangle resized,
+  with a panel open. Only what was open when the press started is closed. A tap on the
+  map that closes a panel is swallowed (its click doesn't reach Leaflet), so it doesn't
+  also pick a track; one on another control closes the panel and works that control.
+  A tap on a track that drops the selection goes on to `onMapTap` (`passTap`) and opens
+  that track; one beside the tracks is swallowed too, so a popup opened from the list
+  stays. The selection ignores taps on the controls, since its list
+  follows their filters.
 - **Display settings** (`initializeDisplaySettings`). The gear button opens a dialog
   with four settings, all remembered in `localStorage` (`activitiesMap.displaySettings`).
   *Line width* sets the track width, 1–5 px in 0.5 px steps (default 2 px, opacity 0.8).
@@ -257,8 +268,8 @@ becomes a polyline in its category colour.
   of highlighted tracks on or off (`applyShowDirection`). The dialog's controls all go
   through `setDisplaySettings`, like presets do. Below them, *Reset to defaults*
   (`resetMapState`) forgets the remembered state (see "Remembered state") and reloads
-  the page. The dialog stays open while the map is used; the gear, its close
-  button, Escape or folding the controls closes it.
+  the page. The dialog stays open while the map is moved; the gear, a tap outside it,
+  Escape or folding the controls closes it.
 - **Background and activity types** (`initializeLayerSelects`). A `<select>` picks the
   background map, and a multi-select dropdown with counts and All/None shortcuts picks
   the categories. Folium's layer control stays on the page, hidden; the two selectors
@@ -322,7 +333,8 @@ or `TAP_TOLERANCE_TOUCH_PX` (20 px) for a touch, based on the event's `pointerTy
 - One match opens that activity's popup at the click point.
 - Several matches (overlapping tracks) are listed in the selection dialog, which is also
   used by the area tool. The list refreshes when the filters change. The next click on
-  the map closes it; a mouse click on a row opens that activity and closes the list,
+  the map closes it, and picks what it lands on like any other click; a mouse click on
+  a row opens that activity and closes the list,
   while a tap on a row leaves it open, since touch screens have no hover to tell the
   tracks apart.
 - Clicks while the area tool is active, and the click that ends a rectangle drag, are
@@ -342,7 +354,8 @@ sides (`addAreaSelectHandles`). They are draggable Leaflet markers, so they work
 mouse and a finger; a handle moves only its own edges (`resizedAreaBounds`), and
 dragging past the opposite edge flips the rectangle. The bounds and the list update
 while dragging, and a side handle snaps back to the middle of its side when released.
-The handles go with the rectangle when a new one is drawn or the selection is closed.
+The handles go with the rectangle when a new one is drawn or the selection is closed,
+with its ✕ or a tap on the map.
 
 The resulting dialog lists the activities in the rectangle with totals per category and
 overall (count, distance, time), a switch between tracks *partially* and *fully* inside
