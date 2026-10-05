@@ -35,12 +35,13 @@ BLOCKED_NAMES = ("config-local.toml", ".env")
 BLOCKED_EXTENSIONS = (".gpx", ".fit", ".tcx", ".kml", ".kmz")
 # the downloader's per-activity file stem: <date>_<activity id>_<type>
 GARMIN_ACTIVITY_FILE = re.compile(r"\d{4}-\d{2}-\d{2}_\d{6,}_\w+\.\w+$")
-TOKEN_FILE = re.compile(r"(^|/)oauth\d?_token\.json$")
+# garminconnect token store: garmin_tokens.json (0.3+), oauth1/oauth2_token.json (garth, before 0.3)
+TOKEN_FILE = re.compile(r"(^|/)(oauth\d?_token|garmin_tokens)\.json$")
 
 FERNET_TOKEN = re.compile(r"gAAAAA[A-Za-z0-9_-]{40,}")
 JWT = re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.")
 OAUTH_FIELD = re.compile(
-    r"""["']?(oauth_token_secret|oauth_token|access_token|refresh_token|mfa_token)["']?"""
+    r"""["']?(oauth_token_secret|oauth_token|access_token|refresh_token|mfa_token|di_token|di_refresh_token)["']?"""
     r"""\s*[:=]\s*["'][^"']{12,}["']""")
 OWNER_FIELD = re.compile(
     r"""["'](owner(Id|DisplayName|FullName|ProfileImageUrl\w*)|userProfileId|userProfilePk|profileId|deviceId)["']"""

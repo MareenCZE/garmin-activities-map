@@ -3,9 +3,8 @@ import logging
 import os.path
 from getpass import getpass
 
-import requests
-from garminconnect import (Garmin, GarminConnectAuthenticationError)
-from garth.exc import GarthHTTPError
+from garminconnect import (Garmin, GarminConnectAuthenticationError, GarminConnectConnectionError,
+                           GarminConnectTooManyRequestsError)
 import tomllib
 import json
 
@@ -19,28 +18,30 @@ def init_api() -> Garmin:
     token_store = config["storage"]["directory-token-store"]
 
     try:
-        # Using Oauth1 and OAuth2 token files from directory
+        # Using the token file in the directory; an expiring token is refreshed and saved back
         logger.info(f"Trying to login to Garmin Connect using token data from directory '{token_store}'")
 
         garmin = Garmin()
         garmin.login(token_store)
 
-    except (FileNotFoundError, GarthHTTPError, GarminConnectAuthenticationError):
-        # Session is expired. You'll need to log in again
+    except GarminConnectAuthenticationError:
+        # No usable tokens (missing, rejected or in the old pre-0.3 format). You'll need to log in again
         logger.info("Login tokens not present, login with your Garmin Connect credentials to generate them.\n"
               f"They will be stored in '{token_store}' for future use.\n")
         try:
             email, password = get_credentials()
 
             garmin = Garmin(email=email, password=password, is_cn=False, prompt_mfa=get_mfa)
-            garmin.login()
-            # Save Oauth1 and Oauth2 token files to directory for next login
-            garmin.garth.dump(token_store)
-            logger.info(f"Oauth tokens stored in '{token_store}' directory for future use. (first method)\n")
-        except (FileNotFoundError, GarthHTTPError, GarminConnectAuthenticationError,
-                requests.exceptions.HTTPError) as err:
+            # Logs in and saves the token file to the directory for next login
+            garmin.login(token_store)
+            logger.info(f"Login tokens stored in '{token_store}' directory for future use.\n")
+        except (GarminConnectAuthenticationError, GarminConnectConnectionError,
+                GarminConnectTooManyRequestsError) as err:
             logger.error(err)
             return None
+    except (GarminConnectConnectionError, GarminConnectTooManyRequestsError) as err:
+        logger.error(err)
+        return None
 
     return garmin
 

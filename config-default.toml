@@ -154,7 +154,7 @@ directory-gpx = 'data/gpx'
 # Directory containing processed GPX coordinates of activities. These are used for the map as they are significantly smaller than
 # the original ones.
 directory-coordinates = 'data/coordinates'
-# OAuth token for Garmin Connect gets stored here. That way you do not need to re-enter your credentials on each use.
+# Garmin Connect login token (garmin_tokens.json) gets stored here. That way you do not need to re-enter your credentials on each use.
 directory-token-store = '.auth/'
 
 # #####################################################################

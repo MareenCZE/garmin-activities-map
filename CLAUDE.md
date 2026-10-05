@@ -23,8 +23,8 @@ polished app — a single user runs it by hand.
   `ENCRYPT_FTP_PASSWORD`). These `[mode]` values can be overridden per-run via
   CLI flags (`--downloader`, `--map-creator`, `--uploader`, `--utility-mode`,
   `--activity-id`) for scheduled runs — see `activities-map.py` (`main`/`run`).
-- First run prompts for Garmin credentials and caches a ~1-year token under
-  `.auth/`.
+- First run prompts for Garmin credentials and caches a self-renewing token in
+  `.auth/garmin_tokens.json`. Requires Python 3.12+ (`garminconnect` 0.3).
 
 ## Pipeline (each stage is its own module)
 

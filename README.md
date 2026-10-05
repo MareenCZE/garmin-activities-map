@@ -196,7 +196,7 @@ second map's tiles, unless the tile server forbids caching.
 
 ### Requirements
 
-- Python 3.11 or newer
+- Python 3.12 or newer
 - A Garmin Connect account
 - Optional: API keys for CARTO and Mapy.com background maps
 - Optional: a web host with FTPS (or FTP) access, to publish the map
@@ -225,7 +225,8 @@ The sections below cover the settings most people change.
 
 No configuration is needed. On the first run you are asked for your Garmin Connect
 e-mail, password and, if enabled, an MFA code. The resulting login token is stored in
-`.auth/` and is valid for about a year.
+`.auth/garmin_tokens.json` and renews itself on later runs, so you are asked again only
+if Garmin revokes it.
 
 #### Background maps
 
@@ -410,8 +411,6 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
 
 - [python-garminconnect](https://github.com/cyberjunky/python-garminconnect): Garmin
   Connect API for Python
-- [Garth](https://github.com/matin/garth): lower-level Garmin Connect authentication
-  and API client
 - [Folium](https://python-visualization.github.io/folium/latest/): Leaflet maps from
   Python
 - [Leaflet](https://leafletjs.com): JavaScript library for interactive maps
@@ -429,7 +428,5 @@ their attribution to stay visible. The map adds it automatically. **Do not remov
 
 ## Roadmap
 
-- **Replace `garth`.** The Garmin Connect login uses `garth` (through
-  `garminconnect`), which is being retired, so login needs to move to its successor.
 - **Installer.** Replace the manual installation steps in this README (venv,
   `pip install`, first configuration) with an installer script.

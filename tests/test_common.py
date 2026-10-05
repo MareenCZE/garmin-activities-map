@@ -1,4 +1,7 @@
-"""Tests for common.recursive_update and config loading semantics."""
+"""Tests for common.recursive_update, config loading semantics and the Garmin login."""
+import pytest
+from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
+
 import common
 
 
@@ -55,3 +58,54 @@ class TestConfigLoaded:
         assert isinstance(mapping, list) and len(mapping) > 0
         # first category is the catch-all "Other"
         assert mapping[0]["name"] == "Other"
+
+
+class FakeGarmin:
+    """Stand-in for garminconnect.Garmin: records logins, fails the ones listed in ``errors``."""
+    created = []
+    errors = []
+
+    def __init__(self, email=None, password=None, is_cn=False, prompt_mfa=None):
+        self.email, self.password, self.prompt_mfa = email, password, prompt_mfa
+        self.tokenstore = None
+        FakeGarmin.created.append(self)
+
+    def login(self, tokenstore=None):
+        self.tokenstore = tokenstore
+        if FakeGarmin.errors:
+            raise FakeGarmin.errors.pop(0)
+
+
+class TestInitApi:
+    """init_api resumes from the token store and falls back to a credential login."""
+
+    @pytest.fixture(autouse=True)
+    def fake_garmin(self, config, tmp_path, monkeypatch):
+        config["storage"]["directory-token-store"] = str(tmp_path / "auth")
+        FakeGarmin.created, FakeGarmin.errors = [], []
+        monkeypatch.setattr(common, "Garmin", FakeGarmin)
+        monkeypatch.setattr(common, "get_credentials", lambda: ("runner@example.com", "secret"))
+
+    def test_resumes_from_token_store(self, config):
+        garmin = common.init_api()
+        assert garmin is FakeGarmin.created[0] and len(FakeGarmin.created) == 1
+        assert garmin.email is None
+        assert garmin.tokenstore == config["storage"]["directory-token-store"]
+
+    def test_falls_back_to_credentials_and_saves_to_token_store(self, config):
+        FakeGarmin.errors = [GarminConnectAuthenticationError("Username and password are required")]
+        garmin = common.init_api()
+        assert len(FakeGarmin.created) == 2 and garmin is FakeGarmin.created[1]
+        assert garmin.email == "runner@example.com" and garmin.prompt_mfa is common.get_mfa
+        # login(tokenstore) with credentials is what persists the new tokens
+        assert garmin.tokenstore == config["storage"]["directory-token-store"]
+
+    def test_failed_credential_login_returns_none(self):
+        FakeGarmin.errors = [GarminConnectAuthenticationError("no tokens"),
+                             GarminConnectAuthenticationError("bad password")]
+        assert common.init_api() is None
+
+    def test_rate_limited_resume_returns_none_without_prompting(self, monkeypatch):
+        monkeypatch.setattr(common, "get_credentials", lambda: pytest.fail("must not prompt"))
+        FakeGarmin.errors = [GarminConnectTooManyRequestsError("429")]
+        assert common.init_api() is None

@@ -91,8 +91,11 @@ generation, upload. The utility mode then runs a one-off maintenance operation:
 
 Login uses the [`garminconnect`](https://github.com/cyberjunky/python-garminconnect)
 library. The first run asks for the e-mail, password and, if enabled, an MFA code.
-The OAuth tokens are then saved in the token store (`.auth/`) and stay valid for
-about a year, so later runs log in without prompting.
+The tokens are then saved in the token store (`.auth/garmin_tokens.json`); later runs
+log in from it without prompting, and the library refreshes an expiring token and saves
+it back. If the tokens are missing, rejected or in the format of `garminconnect` before
+0.3 (`oauth1_token.json`/`oauth2_token.json`, which are no longer read), `init_api()`
+falls back to the credential prompt.
 
 ## Local store
 

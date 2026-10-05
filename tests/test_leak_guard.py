@@ -115,6 +115,12 @@ def oauth2_token():
                            expires_in=3600, expires_at=1790000000))
 
 
+def garmin_tokens():
+    """Shaped like .auth/garmin_tokens.json."""
+    return json.dumps(dict(di_token=jwt(), di_refresh_token=secrets.token_urlsafe(48),
+                           di_client_id="SYNTHETIC_DI_CLIENT"))
+
+
 def config_local(host="ftp.example-home-site.cz"):
     """Shaped like config-local.toml with an encrypted FTP password and API keys."""
     token = Fernet(Fernet.generate_key()).encrypt(b"hunter2").decode()
@@ -162,6 +168,8 @@ class TestRealisticLeaksAreCaught:
     def test_oauth_tokens(self):
         assert any("OAuth" in r for r in reasons("x.json", oauth1_token()))
         found = reasons("x.json", oauth2_token())
+        assert any("JWT" in r for r in found) and any("OAuth" in r for r in found)
+        found = reasons("x.json", garmin_tokens())
         assert any("JWT" in r for r in found) and any("OAuth" in r for r in found)
 
     def test_config_local_pasted_into_default(self):
@@ -226,6 +234,7 @@ class TestSanitizedFixturesPass:
     "data/activities_list.csv", "output/activities_map.html", ".auth/oauth2_token.json",
     "config-local.toml", "sub/config-local.toml", "tests/fixtures/run.gpx", "x/ride.FIT",
     "a.tcx", "2024-05-01_17018598242_running.json", "tests/oauth1_token.json",
+    ".auth/garmin_tokens.json", "sub/garmin_tokens.json",
 ])
 def test_blocked_paths(path):
     assert leak_guard.check_path(path)
@@ -285,6 +294,7 @@ LEAKS = {
     "activity-json": ("tests/fixtures/activity.json", activity_json(*PRAGUE)),
     "garmin-gpx-as-xml": ("tests/fixtures/track.xml", garmin_gpx(*PRAGUE)),
     "oauth2-token": ("notes/tokens.json", oauth2_token()),
+    "garmin-tokens": ("notes/session.json", garmin_tokens()),
     "config-local-in-default": ("config-default.toml", config_local()),
     "config-local-value": ("README.md", "Published at ftp.example-home-site.cz\n"),
 }
@@ -384,7 +394,8 @@ class TestRealDataIsCaught:
         self.assert_all_caught(real_files("output/data/*_activities.json"))
 
     def test_auth_tokens(self):
-        self.assert_all_caught(real_files(".auth/oauth*_token.json"))
+        # oauth1/oauth2_token.json (garth, before garminconnect 0.3) and garmin_tokens.json
+        self.assert_all_caught(real_files(".auth/*_token*.json"))
 
     def test_real_paths_are_blocked(self):
         files = real_files("data/*/*") + real_files(".auth/*")
