@@ -266,7 +266,8 @@ becomes a polyline in its category colour.
   background. That fades every base layer but not the tracks, the Mapy.com logo or the
   attribution. *Show direction* (default on) turns the chevrons and start/finish markers
   of highlighted tracks on or off (`applyShowDirection`). The dialog's controls all go
-  through `setDisplaySettings`, like presets do. Below them, *Reset to defaults*
+  through `setDisplaySettings`, like presets do. Below them, *Remember the map* turns
+  the remembered map state on or off (see "Remembered state"), and *Reset to defaults*
   (`resetMapState`) forgets the remembered state (see "Remembered state") and reloads
   the page. The dialog stays open while the map is moved; the gear, a tap outside it,
   Escape or folding the controls closes it.
@@ -444,11 +445,18 @@ types, selection and its mode) are saved to `localStorage` (`activitiesMap.mapSt
 settings and the date preset have their own keys, as above. A hand-picked date range and
 the menu fold are not remembered.
 
+*Remember the map* in the display settings stores `off` under
+`activitiesMap.rememberState` when turned off (`setMapStateRemembered`) and removes the
+map state and date preset keys; from then on `loadMapState`, `saveMapState` and the date
+preset's load and save do nothing, so each visit opens the map as configured. The display
+settings are still remembered. Turned back on, the current state is saved at once.
+`isMapStateRemembered` reads the key on every use, since both maps of a comparison share it.
+
 At start-up `loadManifest` takes the state handed over by a comparison, else the
 remembered one, and downloads first the categories that state shows rather than those
 shown on load by the config. Once the controls are set up, `restoreMapState` sets it;
 only then are changes saved, so setting up does not overwrite the remembered state.
-*Reset to defaults* removes all three keys and reloads the page (in a comparison, the
+*Reset to defaults* removes all four keys (so remembering is on again) and reloads the page (in a comparison, the
 shell). The second map of a comparison neither reads nor saves any of them.
 
 ### Comparison mode

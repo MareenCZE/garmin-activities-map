@@ -1245,7 +1245,7 @@ function clampDayRange(range, minDay, maxDay) {
 // The second map of a comparison takes its range from the first one when it opens,
 // and neither reads nor changes the remembered preset.
 function loadDatePreset() {
-    if (COMPARISON_PANE === 'secondary') return null;
+    if (COMPARISON_PANE === 'secondary' || !isMapStateRemembered()) return null;
     try {
         return localStorage.getItem(DATE_PRESET_STORAGE_KEY);
     } catch (e) {
@@ -1254,7 +1254,7 @@ function loadDatePreset() {
 }
 
 function saveDatePreset(presetId) {
-    if (COMPARISON_PANE === 'secondary') return;
+    if (COMPARISON_PANE === 'secondary' || !isMapStateRemembered()) return;
     try {
         if (presetId === 'custom') localStorage.removeItem(DATE_PRESET_STORAGE_KEY);
         else localStorage.setItem(DATE_PRESET_STORAGE_KEY, presetId);
@@ -2071,10 +2071,14 @@ function initializeDisplaySettings() {
                 <label><input type="checkbox" id="show-direction-toggle"> Show direction</label>
                 <div class="ds-hint">Arrows, start and finish on the highlighted track.</div>
             </div>
+            <div>
+                <label><input type="checkbox" id="remember-state-toggle"> Remember the map</label>
+                <div class="ds-hint">Open where you left it: view, background, activity types,
+                    selection and time range. Off, it opens as configured.</div>
+            </div>
             <div class="ds-reset">
                 <button type="button" id="reset-map-state" class="map-button">Reset to defaults</button>
-                <div class="ds-hint">The map remembers its view, background, activity types,
-                    selection, time range and these settings. This forgets them all.</div>
+                <div class="ds-hint">Forgets the remembered map and these settings.</div>
             </div>
         </div>
     `;
@@ -2086,13 +2090,16 @@ function initializeDisplaySettings() {
     const thinToggle = dialog.querySelector('#thin-lines-toggle');
     const opacitySlider = dialog.querySelector('#map-opacity-slider');
     const directionToggle = dialog.querySelector('#show-direction-toggle');
+    const rememberToggle = dialog.querySelector('#remember-state-toggle');
 
     syncDisplaySettingsControls();
+    rememberToggle.checked = isMapStateRemembered();
 
     widthSlider.addEventListener('input', () => setDisplaySettings({ lineWidth: widthSlider.value }));
     thinToggle.addEventListener('change', () => setDisplaySettings({ thinLines: thinToggle.checked }));
     opacitySlider.addEventListener('input', () => setDisplaySettings({ mapOpacity: opacitySlider.value }));
     directionToggle.addEventListener('change', () => setDisplaySettings({ showDirection: directionToggle.checked }));
+    rememberToggle.addEventListener('change', () => setMapStateRemembered(rememberToggle.checked));
     closePanelOnTapOutside(dialog, '.leaflet-control-display-settings', displaySettingsOpen, setDisplaySettingsOpen);
     dialog.querySelector('#reset-map-state').onclick = resetMapState;
     document.addEventListener('keydown', function(e) {
@@ -3735,8 +3742,13 @@ function initializeTapSelection() {
  * comparison. The display settings and the date preset are remembered on their
  * own (DISPLAY_SETTINGS_STORAGE_KEY, DATE_PRESET_STORAGE_KEY); a hand-picked date
  * range is not, and neither is the menu fold.
+ *
+ * "Remember the map" in the display settings turns this off: the map state and
+ * the date preset are then neither saved nor restored, and each visit opens the
+ * map as configured. The display settings are still remembered.
  * ========================================================================== */
 const MAP_STATE_STORAGE_KEY = 'activitiesMap.mapState';
+const REMEMBER_STATE_STORAGE_KEY = 'activitiesMap.rememberState';  // 'off' when turned off
 const MAP_STATE_PARTS = ['view', 'tiles', 'types', 'selection'];
 const MAP_STATE_SAVE_DELAY_MS = 300;
 
@@ -3818,9 +3830,42 @@ function applyMapState(state) {
     }
 }
 
+/**
+ * Whether the map state is remembered. Read on each use, not kept: the two maps of
+ * a comparison share the setting, and either can change it.
+ */
+function isMapStateRemembered() {
+    try {
+        return localStorage.getItem(REMEMBER_STATE_STORAGE_KEY) !== 'off';
+    } catch (e) {
+        return true;  // storage blocked: nothing is remembered either way
+    }
+}
+
+/** Turn remembering on (the state as it is now is saved) or off (what is saved is forgotten). */
+function setMapStateRemembered(on) {
+    clearTimeout(mapStateSaveTimer);
+    mapStateSaveTimer = null;
+    try {
+        if (on) {
+            localStorage.removeItem(REMEMBER_STATE_STORAGE_KEY);
+        } else {
+            localStorage.setItem(REMEMBER_STATE_STORAGE_KEY, 'off');
+            [MAP_STATE_STORAGE_KEY, DATE_PRESET_STORAGE_KEY].forEach(key => localStorage.removeItem(key));
+        }
+    } catch (e) {
+        return;  // storage blocked: nothing to remember or forget
+    }
+    if (on && COMPARISON_PANE !== 'secondary') {
+        saveMapState();
+        const presetSelect = document.getElementById('date-range-preset');
+        if (presetSelect && presetSelect.value) saveDatePreset(presetSelect.value);
+    }
+}
+
 /** The state remembered from the last visit; the second map of a comparison has none. */
 function loadMapState() {
-    if (COMPARISON_PANE === 'secondary') return null;
+    if (COMPARISON_PANE === 'secondary' || !isMapStateRemembered()) return null;
     try {
         const state = JSON.parse(localStorage.getItem(MAP_STATE_STORAGE_KEY) || 'null');
         return state && typeof state === 'object' ? state : null;
@@ -3832,6 +3877,7 @@ function loadMapState() {
 function saveMapState() {
     clearTimeout(mapStateSaveTimer);
     mapStateSaveTimer = null;
+    if (!isMapStateRemembered()) return;
     try {
         localStorage.setItem(MAP_STATE_STORAGE_KEY, JSON.stringify(currentMapState(MAP_STATE_PARTS)));
     } catch (e) {
@@ -3879,7 +3925,7 @@ function resetMapState() {
     clearTimeout(mapStateSaveTimer);
     mapStateSaveTimer = null;
     try {
-        [MAP_STATE_STORAGE_KEY, DISPLAY_SETTINGS_STORAGE_KEY, DATE_PRESET_STORAGE_KEY]
+        [MAP_STATE_STORAGE_KEY, DISPLAY_SETTINGS_STORAGE_KEY, DATE_PRESET_STORAGE_KEY, REMEMBER_STATE_STORAGE_KEY]
             .forEach(key => localStorage.removeItem(key));
     } catch (e) {
         // Storage blocked: there is nothing remembered to forget.

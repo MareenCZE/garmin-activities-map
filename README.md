@@ -176,8 +176,10 @@ anywhere outside them to close them. The presets and save-image panels close the
 
 The browser remembers these settings, and the rest of the map too: on a reload you get
 the view, background map, activity types, area selection and time range you left (a
-hand-picked date range is not kept, so new activities don't stay hidden). **Reset to
-defaults** at the bottom of the dialog forgets all of it and opens the map as configured.
+hand-picked date range is not kept, so new activities don't stay hidden). Turn off
+**Remember the map** to have the map open as configured on every visit instead; the
+settings above are still remembered. **Reset to defaults** at the bottom of the dialog
+forgets all of it and opens the map as configured.
 
 ### Comparing two date ranges
 

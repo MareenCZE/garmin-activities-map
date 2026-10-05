@@ -2,8 +2,8 @@
 
 A reload shows the map as it was left: view, background map, activity types,
 selection, date preset and display settings (the map-state section of
-templates/activity_loader_template.html). "Reset to defaults" in the display
-settings forgets them. The selection dialog zooms the map to its rectangle, and
+templates/activity_loader_template.html), unless "Remember the map" is off.
+"Reset to defaults" in the display settings forgets them. The selection dialog zooms the map to its rectangle, and
 folds away with the other controls.
 
 Opt-in: the module skips unless Playwright *and* a Chromium build are installed.
@@ -152,6 +152,50 @@ def test_reset_forgets_everything(page):
     _wait_loaded(page, "Running")
     assert _state(page) == default
     assert page.locator("#area-selection-dialog").count() == 0
+
+
+def test_remember_off_opens_as_configured(page):
+    default = _state(page)
+    page.click(".leaflet-control-display-settings")
+    toggle = page.locator("#remember-state-toggle")
+    assert toggle.is_checked()
+    toggle.uncheck()
+    page.evaluate(f"""() => {{
+        setBaseLayer('Light');
+        setCategoryShown('Cycling', true);
+        setDateRange('year-2023');
+        setDisplaySettings({{ lineWidth: 4 }});
+        mapInstance.setView([0.003, 0.003], 14, {{ animate: false }});
+        setAreaSelection(L.latLngBounds({SELECTION}));
+    }}""")
+
+    page.reload()
+    _wait_loaded(page, "Running")
+    after = _state(page)
+    # The display settings are still remembered; the rest opens as configured.
+    assert after["display"]["lineWidth"] == 4
+    after["display"] = default["display"]
+    assert after == default
+    page.click(".leaflet-control-display-settings")
+    assert not page.locator("#remember-state-toggle").is_checked()
+
+    # Turned back on, the map as it is now is remembered straight away.
+    page.evaluate("() => setBaseLayer('Light')")
+    page.locator("#remember-state-toggle").check()
+    page.evaluate("() => setDateRange('year-2024')")
+    page.reload()
+    _wait_loaded(page, "Running")
+    after = _state(page)
+    assert (after["tiles"], after["datePreset"]) == ("Light", "year-2024")
+
+
+def test_reset_turns_remembering_back_on(page):
+    page.click(".leaflet-control-display-settings")
+    page.locator("#remember-state-toggle").uncheck()
+    with page.expect_navigation():
+        page.click("#reset-map-state")
+    _wait_loaded(page, "Running")
+    assert page.evaluate("() => isMapStateRemembered()") is True
 
 
 def test_zoom_to_selection_fills_the_map(page):

@@ -55,7 +55,7 @@ python -m pytest tests/test_browser_*.py
 - `test_browser_mapy.py` — headless-Chromium check of the Mapy.com logo toggle
   (opt-in; see above)
 - `test_browser_saved_state.py` — headless-Chromium checks that a reload keeps the
-  map's state and *Reset to defaults* forgets it, plus the selection dialog's zoom
+  map's state (unless *Remember the map* is off) and *Reset to defaults* forgets it, plus the selection dialog's zoom
   button and folding; opt-in like the one above
 - `test_browser_comparison.py` — headless-Chromium checks of comparison mode: the two
   maps keep everything but their dates in step, a selection shows on both with its own

@@ -39,12 +39,13 @@ remote-filename = "index.html"
 
 # #####################################################################
 [map-tiles]
-# Opening center point of the map. Leave empty if you want to use a calculated middle point of all activities.
-# You can force using a specific point by putting an override into config-local.toml, e.g. [50.08, 14.44] for Prague.
+# The opening view of the map: center point and zoom. They apply when a browser opens the map for the first time.
+# After that the browser shows the map as it was left, unless "Remember the map" in the display settings is
+# turned off; "Reset to defaults" there brings this view back.
+# Center point: leave empty to use the middle of all activities, or put an override into config-local.toml,
+# e.g. [50.08, 14.44] for Prague.
 center-point = []
 # Initial zoom of the map. Default is 8.
-# A browser that opened the map before shows the view it was left at instead; "Reset to
-# defaults" in the display settings brings back this one.
 zoom-start = 8
 # If you want to use map tiles from Mapy.com (formerly Mapy.cz), put your personal API key as an override in config-local.toml.
 # See https://developer.mapy.com/en/rest-api-mapy-cz/api-key/
@@ -96,7 +97,7 @@ tiles = [
 
 # #####################################################################
 [activities]
-# Highlight activities on mouse hover. Makes output larger (7.8 MB instead of 6.3 MB after minification).
+# Highlight an activity on mouse hover and while its popup is open, with its direction (arrows, start and finish).
 enable-activity-highlighting = true
 # Enable the "select area" tool: draw a rectangle on the map to list + summarize the activities inside it.
 # Only activities currently visible (respecting the date and activity-type filters) are considered.
@@ -134,8 +135,11 @@ coords-simplification-factor = 0.0001
 # Round coordinates to a certain number of decimal places. Higher number means higher precision. Lower number means smaller size of
 # the resulting page. Five decimal places should give around 1m precision and reduces size by 1/3.
 coords-decimal-places = 5
-# Max number of activities to process in one go. This is to avoid spamming Garmin Connect interface with too many requests. Too many
-# automated requests may get noticed by Garmin. They may then want to block your access or the API for everyone.
+# Max number of activities downloaded from Garmin Connect in one run, oldest first. Garmin Connect is asked once for the
+# list of new activities, then once per activity for its GPX track; the ones over this limit are left for the next run.
+# This is to avoid spamming Garmin Connect with too many requests. Too many automated requests may get noticed by Garmin.
+# They may then want to block your access or the API for everyone. The first run of install.py downloads in batches of
+# this size, asking before each next one.
 max-number-of-activities = 500
 # URL used in pop-up for a direct link to the activity in Garmin Connect
 garmin-connect-activity-url = "https://connect.garmin.com/modern/activity/"
@@ -161,5 +165,3 @@ directory-token-store = '.auth/'
 [output]
 # Where to store the result
 map-filename = 'output/activities_map.html'
-# Where to store the result after Javascript minification
-map-minified-filename = 'output/activities_map.min.html'
