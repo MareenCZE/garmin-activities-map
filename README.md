@@ -158,7 +158,7 @@ and `zoom` to `image-zoom`.
 
 ### Display settings
 
-The gear button under the camera button opens the display settings. Use them
+The gear button next to the activity-type dropdown opens the display settings. Use them
 when tracks are hard to see on a busy map, such as Mapy.com Outdoor with its coloured
 trails:
 
@@ -169,6 +169,9 @@ trails:
 - **Show direction** turns the arrows and start/finish markers on a highlighted track
   on or off.
 
+The settings apply as you change them and stay open while you move or zoom the map; tap
+anywhere outside them to close them.
+
 The browser remembers these settings, and the rest of the map too: on a reload you get
 the view, background map, activity types, area selection and time range you left (a
 hand-picked date range is not kept, so new activities don't stay hidden). **Reset to
@@ -176,7 +179,7 @@ defaults** at the bottom of the dialog forgets all of it and opens the map as co
 
 ### Comparing two date ranges
 
-The button with two panes, under the gear button, splits the page into two maps side by
+The button with two panes, under the camera button, splits the page into two maps side by
 side (one above the other on a phone held upright), e.g. to compare this year with last
 year. Both start with the current date range; change either one's dates on its own panel.
 Everything else is shared: the view, the activity types, the background map, the display

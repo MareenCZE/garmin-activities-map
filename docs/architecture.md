@@ -237,11 +237,14 @@ becomes a polyline in its category colour.
 ### Controls
 
 - **Layout.** The top-left corner holds the date-range panel with the background and
-  activity-type selectors below it. The top-right column holds a menu button, the
-  presets button, the area-selection button, the save-image button, the display-settings
+  activity-type selectors below it, followed by the display-settings button. The top-right
+  column holds a menu button, the presets button, the area-selection button, the save-image
   button, the comparison button and the zoom bar (`arrangeTopRightControls`); the menu button hides and shows all
-  the other controls and the selection dialog (`placeSelectionDialog`). The presets, save-image and display-settings panels share a place
-  left of the column, so opening one closes the others (`closeMapDialogs`).
+  the other controls and the selection dialog (`placeSelectionDialog`). The presets and save-image panels share a place
+  left of the column. The display-settings panel drops down from the tiles/types panel like
+  the types menu (`placeDisplaySettingsDialog`) and closes on a tap outside it, but not on a
+  drag, pinch or zoom of the map (`closeDisplaySettingsOnTapOutside`); a closing tap on the
+  map doesn't also pick a track. Only one panel is open at a time (`closeMapDialogs`).
 - **Display settings** (`initializeDisplaySettings`). The gear button opens a dialog
   with four settings, all remembered in `localStorage` (`activitiesMap.displaySettings`).
   *Line width* sets the track width, 1–5 px in 0.5 px steps (default 2 px, opacity 0.8).

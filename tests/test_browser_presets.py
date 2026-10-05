@@ -147,7 +147,7 @@ def test_full_preset_sets_everything(page):
     assert page.is_checked("#thin-lines-toggle") and not page.is_checked("#show-direction-toggle")
 
     # The selection's dialog shows, and lists the ride once its data is loaded.
-    page.click("#display-settings-close")
+    page.click(".leaflet-control-display-settings")
     page.locator("#area-selection-dialog").wait_for(state="visible", timeout=10000)
     page.wait_for_function(
         "() => document.getElementById('area-selection-dialog').textContent.includes('Short ride')", timeout=10000)

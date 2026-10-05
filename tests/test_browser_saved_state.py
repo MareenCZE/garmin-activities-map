@@ -187,7 +187,7 @@ def test_menu_button_folds_the_selection_dialog(page):
 
 
 @pytest.mark.parametrize("button, close", [
-    (".leaflet-control-display-settings", "#display-settings-close"),
+    (".leaflet-control-display-settings", ".leaflet-control-display-settings"),
     (".leaflet-control-image-export", "#image-export-close"),
     (".leaflet-control-presets", "#presets-close"),
 ])

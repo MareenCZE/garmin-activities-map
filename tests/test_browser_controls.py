@@ -1,9 +1,9 @@
 """Headless-browser test for the map's control layout and the tiles/types dropdowns.
 
 The date panel heads the top-left stack, with the tiles select and the activity-types
-multiselect under it. The top-right column holds the hamburger, the presets bookmark,
-the area-select tool, the save-image camera, the display-settings gear and the zoom bar;
-the hamburger folds everything but itself.
+multiselect under it, then the display-settings gear. The top-right column holds the
+hamburger, the presets bookmark, the area-select tool, the save-image camera and the zoom
+bar; the hamburger folds everything but itself.
 The dropdowns replace Folium's layer control, which stays on the map hidden. Covers
 initializeLayerSelects, initializeDisplaySettings and the layout in
 templates/activity_loader_template.html.
@@ -116,27 +116,30 @@ def test_layout_panels_left_buttons_right(page):
     presets = _box(page, "#presets-bar")
     area = _box(page, "#area-select-bar")
     camera = _box(page, "#image-export-bar")
-    settings = _box(page, "#display-settings-bar")
+    types = _box(page, "#type-filter-button")
+    settings = _box(page, ".leaflet-control-display-settings")
     zoom = _box(page, ".leaflet-control-zoom")
 
     # Left column: date panel, then the dropdowns under it.
     assert slider["x"] == selects["x"] == 10
     assert slider["y"] + slider["height"] <= selects["y"]
+    # The gear sits in the dropdowns' panel, right of the types dropdown.
+    assert page.locator("#map-layer-selects .leaflet-control-display-settings").count() == 1
+    assert types["x"] + types["width"] < settings["x"]
+    assert settings["x"] + settings["width"] <= selects["x"] + selects["width"]
 
-    # Right column, top to bottom: hamburger, presets, area select, save image, settings, a gap, zoom.
+    # Right column, top to bottom: hamburger, presets, area select, save image, a gap, zoom.
     right = page.locator(".leaflet-top.leaflet-right")
     for selector in (".leaflet-control-toggle-menu", "#presets-bar", "#area-select-bar", "#image-export-bar",
-                     "#display-settings-bar", ".leaflet-control-zoom"):
+                     ".leaflet-control-zoom"):
         assert right.locator(selector).count() == 1
     assert (hamburger["x"] + hamburger["width"] == presets["x"] + presets["width"] == area["x"] + area["width"]
-            == camera["x"] + camera["width"] == settings["x"] + settings["width"]
-            == zoom["x"] + zoom["width"])
+            == camera["x"] + camera["width"] == zoom["x"] + zoom["width"])
     assert hamburger["x"] + hamburger["width"] > 1000
     assert hamburger["y"] + hamburger["height"] < presets["y"]
     assert presets["y"] + presets["height"] < area["y"]
     assert area["y"] + area["height"] < camera["y"]
-    assert camera["y"] + camera["height"] < settings["y"]
-    assert settings["y"] + settings["height"] < zoom["y"]
+    assert camera["y"] + camera["height"] < zoom["y"]
     # The date panel ends before the button column.
     assert slider["x"] + slider["width"] <= hamburger["x"]
 
@@ -146,7 +149,7 @@ def test_layout_panels_left_buttons_right(page):
 
 
 FOLDED = ("#date-range-slider-container", "#map-layer-selects", "#presets-bar", "#area-select-bar",
-          "#image-export-bar", "#display-settings-bar", ".leaflet-control-zoom")
+          "#image-export-bar", ".leaflet-control-display-settings", ".leaflet-control-zoom")
 
 
 def test_hamburger_folds_everything_but_itself(page):
@@ -225,16 +228,24 @@ def test_settings_gear_opens_and_closes_dialog(page):
 
     page.click(".leaflet-control-display-settings")
     assert dialog.is_visible()
-    # Level with the gear, left of the button column.
-    gear = _box(page, ".leaflet-control-display-settings")
+    # It drops down from the tiles/types panel, left-aligned with it, like the types menu.
+    panel = _box(page, "#map-layer-selects")
     box = _box(page, "#display-settings-dialog")
-    assert box["y"] == gear["y"]
-    assert box["x"] + box["width"] <= gear["x"]
-    # It stays open while the map is used.
-    page.mouse.click(400, 500)
+    assert box["x"] == pytest.approx(panel["x"], abs=1)
+    assert panel["y"] + panel["height"] <= box["y"] <= panel["y"] + panel["height"] + 8
+    # It stays open while the map is dragged, or zoomed with its buttons.
+    page.mouse.move(400, 500)
+    page.mouse.down()
+    page.mouse.move(450, 450, steps=5)
+    page.mouse.up()
+    page.click(".leaflet-control-zoom-in")
+    assert dialog.is_visible()
+    # Its own controls don't close it.
+    page.click("#thin-lines-toggle")
     assert dialog.is_visible()
 
-    page.click("#display-settings-close")
+    # The gear toggles it.
+    page.click(".leaflet-control-display-settings")
     assert not dialog.is_visible()
     page.click(".leaflet-control-display-settings")
     page.keyboard.press("Escape")
@@ -357,3 +368,41 @@ def test_single_base_layer_still_offers_no_map(config, tmp_path):
                 browser.close()
     finally:
         httpd.shutdown()
+
+
+@pytest.mark.parametrize("width, height", [(320, 568), (375, 667), (568, 320)])
+def test_settings_dialog_stays_on_a_small_screen(page, width, height):
+    page.set_viewport_size({"width": width, "height": height})
+    page.click(".leaflet-control-display-settings")
+    box = _box(page, "#display-settings-dialog")
+    assert box["x"] >= 0
+    assert box["x"] + box["width"] <= width
+    assert box["y"] + box["height"] <= height
+    # Its last control can still be reached, by scrolling inside it if need be.
+    page.locator("#reset-map-state").scroll_into_view_if_needed()
+    assert page.locator("#reset-map-state").is_visible()
+
+
+def test_tap_on_the_map_closes_settings_without_picking_a_track(page):
+    page.evaluate("() => mapInstance.setView([0.001, 0.005], 17, { animate: false })")
+    page.click(".leaflet-control-display-settings")
+    track = page.evaluate("""() => {
+        const p = mapInstance.latLngToContainerPoint([0.000, 0.005]);
+        const r = mapInstance.getContainer().getBoundingClientRect();
+        return { x: r.left + p.x, y: r.top + p.y };
+    }""")
+    page.mouse.click(track["x"], track["y"])
+    assert page.locator("#display-settings-dialog").is_hidden()
+    page.wait_for_timeout(200)
+    assert page.locator(".leaflet-popup").count() == 0
+    assert page.locator("#area-selection-dialog").count() == 0
+    # The next tap on the track works as usual.
+    page.mouse.click(track["x"], track["y"])
+    page.wait_for_selector(".leaflet-popup", timeout=5000)
+
+
+def test_tap_on_another_control_closes_settings_and_works_it(page):
+    page.click(".leaflet-control-display-settings")
+    page.click("#type-filter-button")
+    assert page.locator("#display-settings-dialog").is_hidden()
+    assert page.locator("#type-filter-menu").is_visible()

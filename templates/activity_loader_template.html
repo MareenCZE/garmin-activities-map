@@ -1649,7 +1649,7 @@ function initializeToggleControl() {
 
 /**
  * The top-right column, top to bottom: hamburger, presets, area-select tool, save
- * image, display settings, comparison, zoom bar. Leaflet puts the zoom control in the top-left corner by default.
+ * image, comparison, zoom bar. Leaflet puts the zoom control in the top-left corner by default.
  */
 function arrangeTopRightControls() {
     const corner = mapInstance._controlCorners.topright;
@@ -1659,7 +1659,6 @@ function arrangeTopRightControls() {
         document.getElementById('presets-bar'),
         document.getElementById('area-select-bar'),
         document.getElementById('image-export-bar'),
-        document.getElementById('display-settings-bar'),
         document.getElementById('comparison-bar'),
         mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
     ].filter(Boolean);
@@ -1670,14 +1669,13 @@ let mapControlsFolded = false;
 
 function toggleMapControls() {
     // The hamburger folds everything but itself: the top-left corner (date panel,
-    // tiles/types dropdowns), the buttons under it (presets, area select,
-    // save image, display settings, comparison, zoom) and the selection dialog.
+    // tiles/types dropdowns, display-settings gear), the buttons under it (presets,
+    // area select, save image, comparison, zoom) and the selection dialog.
     mapControlsFolded = !mapControlsFolded;
     const folded = [
         mapInstance._controlCorners.topleft,
         document.getElementById('presets-bar'),
         document.getElementById('area-select-bar'),
-        document.getElementById('display-settings-bar'),
         document.getElementById('image-export-bar'),
         document.getElementById('comparison-bar'),
         mapInstance.zoomControl && mapInstance.zoomControl.getContainer(),
@@ -1757,7 +1755,7 @@ function initializeMapyAttribution() {
 }
 
 /* ============================================================================
- * Display settings: a gear button in the top-right column opens a small dialog
+ * Display settings: a gear button next to the types dropdown opens a small dialog
  * with a line-width slider, "thin, see-through lines", a base-map opacity slider and a
  * "show direction" switch for highlighted tracks. Changes apply
  * live and are remembered per browser (displaySettings, above).
@@ -1825,7 +1823,76 @@ function closeMapDialogs(except) {
 
 function setDisplaySettingsOpen(open) {
     if (open) closeMapDialogs('display-settings');
-    setMapDialogOpen('display-settings-dialog', '.leaflet-control-display-settings', open);
+    if (setMapDialogOpen('display-settings-dialog', '.leaflet-control-display-settings', open) && open) {
+        placeDisplaySettingsDialog();
+    }
+}
+
+/**
+ * Unlike the top-right panels, it drops down from the tiles/types panel like the
+ * types menu, left-aligned with it; on a short screen it scrolls inside.
+ */
+function placeDisplaySettingsDialog() {
+    const panel = document.getElementById('map-layer-selects');
+    const dialog = document.getElementById('display-settings-dialog');
+    if (!panel || !dialog || dialog.hidden) return;
+    const margin = 10;
+    const box = panel.getBoundingClientRect();
+    const top = Math.round(box.bottom + 4);
+    dialog.style.top = `${top}px`;
+    dialog.style.left = `${Math.round(box.left)}px`;
+    dialog.style.maxHeight = `${Math.max(120, window.innerHeight - top - margin)}px`;
+}
+
+// A press that moves less than this is a tap, not a drag of the map.
+const DISPLAY_SETTINGS_TAP_SLOP_PX = 8;
+
+/**
+ * A tap or click outside the display settings closes them, like the types menu,
+ * but dragging, pinching or zooming the map does not: a setting can be judged
+ * while the map moves. A tap on the map only closes them; it doesn't also pick
+ * a track (the click is swallowed). One on another control still works it.
+ */
+function closeDisplaySettingsOnTapOutside(dialog, button) {
+    const pressed = new Set();   // pointers down outside, in the current gesture
+    let press = null;            // the gesture's first press: { id, x, y, multi }
+    let swallowClickUntil = 0;
+
+    function outside(target) {
+        return !dialog.contains(target) && !button.contains(target)
+            && !(target.closest && target.closest('.leaflet-control-zoom'));
+    }
+    function onMapSurface(target) {
+        const map = mapInstance.getContainer();
+        return map.contains(target) && !(target.closest && target.closest('.leaflet-control'));
+    }
+
+    document.addEventListener('pointerdown', function(e) {
+        if (!displaySettingsOpen() || !outside(e.target)) return;
+        pressed.add(e.pointerId);
+        if (press) press.multi = true;   // a second finger: a pinch
+        else press = { id: e.pointerId, x: e.clientX, y: e.clientY, multi: false };
+    }, true);
+
+    function onPointerEnd(e) {
+        if (!pressed.delete(e.pointerId)) return;
+        const tap = press && e.type === 'pointerup' && e.pointerId === press.id && !press.multi
+            && Math.hypot(e.clientX - press.x, e.clientY - press.y) < DISPLAY_SETTINGS_TAP_SLOP_PX;
+        if (pressed.size === 0) press = null;
+        if (!tap || !displaySettingsOpen()) return;
+        setDisplaySettingsOpen(false);
+        swallowClickUntil = onMapSurface(e.target) ? Date.now() + 500 : 0;
+    }
+    document.addEventListener('pointerup', onPointerEnd, true);
+    document.addEventListener('pointercancel', onPointerEnd, true);
+
+    document.addEventListener('click', function(e) {
+        if (Date.now() >= swallowClickUntil) return;
+        swallowClickUntil = 0;
+        if (!onMapSurface(e.target)) return;
+        e.stopPropagation();
+        e.preventDefault();
+    }, true);
 }
 
 function displaySettingsOpen() {
@@ -1895,6 +1962,24 @@ function initializeDisplaySettings() {
             width: 100%;
             margin: 4px 0 0;
         }
+        /* Drops down from the tiles/types panel (placeDisplaySettingsDialog). */
+        #display-settings-dialog {
+            right: auto;
+            max-width: calc(100vw - 20px);
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
+        #map-layer-selects .leaflet-control-display-settings {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1px 4px;
+            cursor: pointer;
+        }
+        #map-layer-selects .leaflet-control-display-settings svg {
+            width: 15px;
+            height: 15px;
+        }
         .map-dialog .ds-reset {
             border-top: 1px solid rgba(0,0,0,0.1);
             padding-top: 10px;
@@ -1902,35 +1987,23 @@ function initializeDisplaySettings() {
     `;
     document.head.appendChild(style);
 
-    const button = L.DomUtil.create('a', 'leaflet-control-display-settings');
-    button.href = '#';
+    // In the tiles/types panel, after the types dropdown; it folds away with the
+    // top-left corner (see toggleMapControls).
+    const selects = document.getElementById('map-layer-selects');
+    if (!selects) return;
+    const button = L.DomUtil.create('button', 'leaflet-control-display-settings', selects);
+    button.type = 'button';
     button.title = 'Display settings';
-    button.role = 'button';
+    button.setAttribute('aria-label', 'Display settings');
     button.setAttribute('aria-haspopup', 'dialog');
     button.setAttribute('aria-expanded', 'false');
     button.innerHTML = DISPLAY_SETTINGS_ICON;
-    button.style.cssText = 'display:flex;align-items:center;justify-content:center;cursor:pointer;';
-    button.onclick = function(e) {
-        L.DomEvent.stop(e);
+    button.onclick = function() {
         setDisplaySettingsOpen(!displaySettingsOpen());
     };
-    L.DomEvent.disableClickPropagation(button);
 
-    // Its own bar under the save-image one (arrangeTopRightControls); it folds
-    // away with the hamburger (see toggleMapControls).
-    const DisplaySettingsControl = L.Control.extend({
-        options: { position: 'topright' },
-        onAdd: function() {
-            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-            container.id = 'display-settings-bar';
-            container.appendChild(button);
-            return container;
-        }
-    });
-    mapInstance.addControl(new DisplaySettingsControl());
-
-    // The dialog stays open while the map is panned or zoomed, so the effect can
-    // be judged in place; the gear, the close button or Escape close it.
+    // It stays open while the map is panned or zoomed, so the effect can be judged
+    // in place; the gear, a tap outside or Escape close it.
     const dialog = document.createElement('div');
     dialog.id = 'display-settings-dialog';
     dialog.className = 'map-dialog';
@@ -1938,10 +2011,6 @@ function initializeDisplaySettings() {
     dialog.setAttribute('aria-label', 'Display settings');
     dialog.hidden = true;
     dialog.innerHTML = `
-        <div class="ds-head">
-            <strong style="font-size:13px;">Display settings</strong>
-            <button type="button" class="ds-close" id="display-settings-close" title="Close">✕</button>
-        </div>
         <div class="ds-body">
             <div>
                 <div class="ds-row">
@@ -1988,13 +2057,13 @@ function initializeDisplaySettings() {
     thinToggle.addEventListener('change', () => setDisplaySettings({ thinLines: thinToggle.checked }));
     opacitySlider.addEventListener('input', () => setDisplaySettings({ mapOpacity: opacitySlider.value }));
     directionToggle.addEventListener('change', () => setDisplaySettings({ showDirection: directionToggle.checked }));
-    dialog.querySelector('#display-settings-close').onclick = function() {
-        setDisplaySettingsOpen(false);
-    };
+    closeDisplaySettingsOnTapOutside(dialog, button);
     dialog.querySelector('#reset-map-state').onclick = resetMapState;
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') setDisplaySettingsOpen(false);
     });
+    // A phone turned sideways, or the panel above rewrapping.
+    window.addEventListener('resize', placeDisplaySettingsDialog);
 
     // Tracks read displaySettings as they are drawn; the map fade applies now.
     applyMapOpacity();
@@ -2025,11 +2094,11 @@ let selectionRefreshScheduled = false;
 // A dashed rectangle with a cursor pointer in its lower-right corner. Distinct
 // from the zoom "+" it sits next to.
 const AREA_SELECT_ICON =
-    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
-    '<rect x="2.5" y="2.5" width="12" height="12" rx="1" fill="none" ' +
-    'stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2"/>' +
-    '<path d="M11 11 L20 14.2 L16.4 15.3 L15.3 18.9 Z" fill="currentColor" ' +
-    'stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/></svg>';
+    '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">' +
+    '<rect x="2" y="2" width="15" height="15" rx="1.5" fill="none" ' +
+    'stroke="currentColor" stroke-width="2" stroke-dasharray="3.2 2.4"/>' +
+    '<path d="M10.5 10.5 V22 L13.4 19.2 L15.6 23.4 L17.7 22.4 L15.5 18.3 H19.6 Z" fill="currentColor" ' +
+    'stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>';
 
 function formatDuration(totalMinutes) {
     const minutes = Math.floor(totalMinutes);
