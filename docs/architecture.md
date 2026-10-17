@@ -108,8 +108,8 @@ across its JSON, GPX and coordinate files.
 One row per activity. It is the source for map generation.
 
 ```
-date,time,type,duration,distance,activity_id,name,filename,has_gps_data,elevation_gain,elevation_loss
-2024-01-15,08:00,running,45.0,10.0,0000000000,"Activity name",2024-01-15_0000000000_running,True,120,118
+date,time,type,duration,distance,activity_id,name,filename,has_gps_data,elevation_gain,elevation_loss,is_race
+2024-01-15,08:00,running,45.0,10.0,0000000000,"Activity name",2024-01-15_0000000000_running,True,120,118,False
 ```
 
 | Column                              | Meaning                                                        |
@@ -123,8 +123,9 @@ date,time,type,duration,distance,activity_id,name,filename,has_gps_data,elevatio
 | `filename`                          | The shared file name stem.                                     |
 | `has_gps_data`                      | `True`/`False`; activities without GPS have no coordinate file. |
 | `elevation_gain`, `elevation_loss`  | Total ascent/descent in whole metres; empty when Garmin recorded none. |
+| `is_race`                           | `True`/`False`; `True` when the activity's Garmin event type is *race*. |
 
-An index written before the elevation columns existed is upgraded automatically: the
+An index written before the elevation or race columns existed is upgraded automatically: the
 next download backs it up and rewrites it with the new header, and `REGENERATE_CSV`
 fills in the values from the stored JSON.
 
@@ -190,7 +191,8 @@ them on.
 
 Each activity in a data file carries `coordinates`, `color`, `date`, `time`, `name`,
 `activity_type`, `distance`, `duration` and `activity_id`, plus `elevation_gain` and
-`elevation_loss` when they were recorded.
+`elevation_loss` when they were recorded, and `race: true` for a race (the page shows a
+trophy before its name in the popup and the selection list).
 
 The manifest lists, per category, its data file, activity count, colour and
 `show_on_load` flag, and adds the overall `date_range` and a `config` block

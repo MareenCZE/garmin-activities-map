@@ -19,7 +19,7 @@ def init_directories():
 
 
 FIELDNAMES = ['date', 'time', 'type', 'duration', 'distance', 'activity_id', 'name', 'filename', 'has_gps_data',
-              'elevation_gain', 'elevation_loss']
+              'elevation_gain', 'elevation_loss', 'is_race']
 
 
 def optional_metres(value):
@@ -31,7 +31,7 @@ def optional_metres(value):
 
 class Activity:
     def __init__(self, activity_id, distance, duration, date, time, filename, has_gps_data, activity_type, name,
-                 elevation_gain=None, elevation_loss=None):
+                 elevation_gain=None, elevation_loss=None, is_race=False):
         self.activity_id = activity_id
         self.distance = float(distance)
         self.duration = float(duration)
@@ -47,6 +47,7 @@ class Activity:
         self.name = name
         self.elevation_gain = optional_metres(elevation_gain)
         self.elevation_loss = optional_metres(elevation_loss)
+        self.is_race = is_race
         self.coordinates = []
 
     def load_coordinates(self):
@@ -76,7 +77,9 @@ def load_activities_from_csv(load_coordinates=True):
                 name=row['name'],
                 # absent in a database written before the elevation columns were added
                 elevation_gain=row.get('elevation_gain'),
-                elevation_loss=row.get('elevation_loss')
+                elevation_loss=row.get('elevation_loss'),
+                # absent or empty in a database written before the race column was added
+                is_race=row.get('is_race') == 'True'
             )
             if load_coordinates:
                 activity.load_coordinates()
@@ -118,7 +121,8 @@ def write_activity(writer, activity: Activity):
          'filename': activity.filename,
          'has_gps_data': str(activity.has_gps_data),
          'elevation_gain': '' if activity.elevation_gain is None else activity.elevation_gain,
-         'elevation_loss': '' if activity.elevation_loss is None else activity.elevation_loss})
+         'elevation_loss': '' if activity.elevation_loss is None else activity.elevation_loss,
+         'is_race': str(activity.is_race)})
 
 
 def create_appender(filename=None):
@@ -144,7 +148,7 @@ def upgrade_database_header():
         header = next(csv.reader(csv_file), None)
     if header is None or header == FIELDNAMES:
         return
-    logger.info(f"Upgrading the columns of {filename}")
+    logger.info(f"Upgrading the columns of {filename}. Run the REGENERATE_CSV utility mode to fill them in")
     write_database(load_and_backup())
 
 

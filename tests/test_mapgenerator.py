@@ -154,6 +154,15 @@ class TestCreateActivityDataFiles:
         assert payload["elevation_gain"] == 312
         assert payload["elevation_loss"] == 0  # a flat activity keeps its zero
 
+    def test_only_a_race_carries_the_race_flag(self, storage_env, mapping_config):
+        race = make_activity(storage, activity_id=7, filename="a", is_race=True)
+        other = make_activity(storage, activity_id=8, filename="b")
+        out_dir = storage_env.tmp_path / "output"
+        mapgenerator.create_activity_data_files([race, other], str(out_dir))
+        payloads = json.loads((out_dir / "data" / "running_activities.json").read_text())
+        assert payloads[0]["race"] is True
+        assert "race" not in payloads[1]
+
     def test_empty_activities_uses_epoch_date_range(self, storage_env, mapping_config):
         out_dir = storage_env.tmp_path / "output"
         manifest = mapgenerator.create_activity_data_files([], str(out_dir))

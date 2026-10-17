@@ -85,7 +85,17 @@ def map_to_object(api_activity):
                             activity_type=activity_type,
                             name=api_activity.get('activityName'),
                             elevation_gain=get_summary_field(api_activity, 'elevationGain'),
-                            elevation_loss=get_summary_field(api_activity, 'elevationLoss'))
+                            elevation_loss=get_summary_field(api_activity, 'elevationLoss'),
+                            is_race=is_race(api_activity))
+
+
+def is_race(api_activity):
+    """Whether Garmin has the activity's event type set to race.
+
+    The activity list response carries it as eventType, the single-activity one as eventTypeDTO.
+    """
+    event_type = api_activity.get('eventType') or api_activity.get('eventTypeDTO') or {}
+    return event_type.get('typeKey') == 'race'
 
 
 def get_summary_field(api_activity, key):
@@ -192,6 +202,7 @@ def regenerate_csv():
         activity.time = time_object.strftime("%H:%M")
         activity.elevation_gain = storage.optional_metres(get_summary_field(activity_json, 'elevationGain'))
         activity.elevation_loss = storage.optional_metres(get_summary_field(activity_json, 'elevationLoss'))
+        activity.is_race = is_race(activity_json)
 
     storage.write_database(existing_activities)
 

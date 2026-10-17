@@ -373,6 +373,9 @@ def create_activity_data_files(activities, output_dir):
             activity_data['elevation_gain'] = activity.elevation_gain
         if activity.elevation_loss is not None:
             activity_data['elevation_loss'] = activity.elevation_loss
+        # left out for the many activities that are not races; the page then shows no race icon
+        if activity.is_race:
+            activity_data['race'] = True
 
         categories[mapping.name]['activities'].append(activity_data)
 

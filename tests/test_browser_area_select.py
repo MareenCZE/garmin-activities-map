@@ -40,9 +40,10 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def _make_track(activity_id, name, coords, date="2024-05-01", elevation_gain=None, elevation_loss=None):
+def _make_track(activity_id, name, coords, date="2024-05-01", elevation_gain=None, elevation_loss=None,
+                is_race=False):
     a = storage.Activity(activity_id, 5.0, 42.0, date, "07:30",
-                          f"f{activity_id}", True, "running", name, elevation_gain, elevation_loss)
+                          f"f{activity_id}", True, "running", name, elevation_gain, elevation_loss, is_race)
     a.coordinates = coords
     return a
 
@@ -53,7 +54,7 @@ def served_map(config, tmp_path):
 
     - "Alpha" sits entirely inside a small box around [50.00, 14.00].
     - "Bravo" starts inside that box but runs far outside it, so it is only ever
-      *partially* inside.
+      *partially* inside. It is a race.
     """
     config["map-tiles"]["tiles"] = [{"tiles": "OpenStreetMap", "name": "OSM"}]
     config["map-tiles"]["carto-api-key"] = ""
@@ -67,7 +68,7 @@ def served_map(config, tmp_path):
     # index mismatch bug.
     alpha = _make_track(1, "Alpha", [[50.000, 14.000], [50.005, 14.005]], date="2024-05-01",
                         elevation_gain=120, elevation_loss=115)
-    bravo = _make_track(2, "Bravo", [[50.000, 14.000], [50.200, 14.300]], date="2024-06-01")
+    bravo = _make_track(2, "Bravo", [[50.000, 14.000], [50.200, 14.300]], date="2024-06-01", is_race=True)
 
     out_html = tmp_path / "activities_map.html"
     mapgenerator.create_map_with_activities([alpha, bravo], str(out_html))
@@ -146,6 +147,9 @@ def test_rectangle_selects_and_summarizes_activities(served_map):
             assert "1 h 24 min" in header
             # Each row exposes a Garmin Connect link.
             assert dialog.locator(".area-sel-row a[href*='connect.garmin.com']").count() == 2
+            # Only the race (Bravo, newest so first) has the trophy before its name.
+            assert dialog.locator(".area-sel-row svg[aria-label='Race']").count() == 1
+            assert dialog.locator(".area-sel-row").first.locator("svg[aria-label='Race']").count() == 1
 
             # Switch to "fully inside": only Alpha stays.
             dialog.locator("input[value='full']").check()
@@ -466,6 +470,18 @@ def test_activity_popup_formats_time_and_elevation(served_map):
             assert "1,024 m" in text
             assert "998 m" in text
             assert page.locator("svg[aria-label='Gravel cycling']").count() == 1
+            assert page.locator("svg[aria-label='Race']").count() == 0  # not a race
+
+            # A race has a trophy at the start of its title.
+            html = page.evaluate(
+                """() => createActivityPopupHtml({
+                    name: 'Test Race', activity_type: 'running', date: '2024-05-01',
+                    distance: 10, duration: 40, activity_id: 5, race: true,
+                }, null)"""
+            )
+            page.set_content(html)
+            assert page.locator(".ap-title > svg:first-child[aria-label='Race']").count() == 1
+            assert page.locator(".ap-title").inner_text().endswith("Test Race")
 
             # A type without its own icon still gets one, labelled with the type.
             html = page.evaluate(
