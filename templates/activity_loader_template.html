@@ -474,6 +474,7 @@ const POPUP_ICON_PATHS = {
     snowshoeing: 'M385-96q-8 0-34-11.5T303-147l-87-112 38-29 43 55 88-65 54-274-79 34v106h-72v-154l185-78q9-4 18.5-6t19.5-2q32 0 53.5 16.5T601-613l12 19q19 33 49.5 61.5T768-504v72q-59 0-108.5-26T577-528l-23 120 70 70v194q17 0 31.5-5t26.5-14q3-2 6.5-3.5t7.5-1.5q11 0 17.5 7.5T720-144q0 5-2.5 10t-7.5 9q-18 14-40 21.5T624-96H480v-48h72v-165l-76-76-25 129-110 79q10 13 23.5 21.5T392-143q8 2 12.5 8t4.5 14q0 10-6.5 17.5T385-96Zm191-600q-35 0-59.5-24.5T492-780q0-35 24.5-59.5T576-864q35 0 59.5 24.5T660-780q0 35-24.5 59.5T576-696Z',
     sports: 'M432-240q-100 0-170-70t-70-170q0-11 1.5-24t3.5-24h-5q-42 0-69-27.5t-27-68.02q0-40.52 28-68.5Q152-720 192-720q29 0 53.5 14.5T279-664q32-29 71.5-42.5T432-720h432v144H672v96q0 100-70 170t-170 70ZM209-606.86q7-6.86 7-17T209.14-641q-6.86-7-17-7T175-641.14q-7 6.86-7 17t6.86 17.14q6.86 7 17 7t17.14-6.86Zm316.5 220.14q38.5-38.72 38.5-93.5t-38.72-93.28q-38.72-38.5-93.5-38.5t-93.28 38.72q-38.5 38.72-38.5 93.5t38.72 93.28q38.72 38.5 93.5 38.5t93.28-38.72ZM483-429.21q21-21.21 21-51T482.79-531q-21.21-21-51-21T381-530.79q-21 21.21-21 51T381.21-429q21.21 21 51 21T483-429.21ZM432-480Z',
     sports_tennis: 'm147-144-51-51 120-120q45-45 58.5-86.5T288-540q0-61 25.5-119T387-765q88-88 195-100t176 59q69 71 57 177.5T717-435q-48 48-106 73.5T492-336q-97 0-138.5 13.5T267-264L147-144Zm249-300q46 46 126.5 33.5T666-486q63-64 75.5-144T708-755q-46-45-126.5-33.5T438-714q-63 63-75.5 143.5T396-444ZM570-66q-42-42-42-102t42-102q42-42 102-42t102 42q42 42 42 102T774-66q-42 42-102 42T570-66Zm153-51q21-21 21-51t-21-51q-21-21-51-21t-51 21q-21 21-21 51t21 51q21 21 51 21t51-21Zm-51-51Z',
+    timer: 'M360-840v-80h240v80H360Zm80 440h80v-240h-80v240Zm40 320q-74 0-139.5-28.5T226-186q-49-49-77.5-114.5T120-440q0-74 28.5-139.5T226-694q49-49 114.5-77.5T480-800q62 0 119 20t107 58l56-56 56 56-56 56q38 50 58 107t20 119q0 74-28.5 139.5T734-186q-49 49-114.5 77.5T480-80Zm0-80q116 0 198-82t82-198q0-116-82-198t-198-82q-116 0-198 82t-82 198q0 116 82 198t198 82Zm0-280Z',
     trending_down: 'M624-209v-72h117L529-492 377-340 96-621l51-51 230 230 152-152 263 262v-117h72v240H624Z',
     trending_up: 'm147-209-51-51 281-281 152 152 212-211H624v-72h240v240h-72v-117L529-287 377-439 147-209Z',
 };
@@ -600,7 +601,9 @@ function injectActivityPopupStyles() {
         .activity-popup.popup-moved .leaflet-popup-tip-container { display: none; }
         .ap { font-family: Arial, sans-serif; color: #333; max-width: 250px; }
         .ap-title { font-weight: bold; font-size: 13px; line-height: 1.3; color: #222; }
-        .ap-i.ap-race { width: 14px; height: 14px; margin-right: 3px; vertical-align: -2px; color: #b8860b; }
+        .ap-i.ap-race, .ap-i.ap-trial { width: 14px; height: 14px; margin-right: 3px; vertical-align: -2px; }
+        .ap-i.ap-race { color: #b8860b; }
+        .ap-i.ap-trial { color: #3a6ea5; }
         .ap-i { width: 16px; height: 16px; flex: 0 0 auto; fill: currentColor; }
         .ap-meta { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 12px; color: #6b6b6b; }
         .ap-meta .ap-type { width: 18px; height: 18px; color: #555; }
@@ -624,16 +627,19 @@ function injectActivityPopupStyles() {
 }
 injectActivityPopupStyles();
 
-// Trophy before the name of an activity Garmin has as a race (the data carries race: true).
-function raceIcon(activity) {
-    return activity.race ? popupIcon('emoji_events', 'Race', 'ap-race') : '';
+// Before the name of an activity: a trophy for a race (the data carries race: true), a stopwatch
+// for a time trial, which Garmin has as a special event (trial: true).
+function eventIcon(activity) {
+    if (activity.race) return popupIcon('emoji_events', 'Race', 'ap-race');
+    if (activity.trial) return popupIcon('timer', 'Time trial', 'ap-trial');
+    return '';
 }
 
 /**
  * Popup of one activity: title; type icon, local date/time and a Garmin Connect
  * link; then distance and duration, with total ascent / descent in a second row
  * for activities that carry elevation_gain / elevation_loss (the rest leave them out).
- * A race has a trophy before its name.
+ * A race has a trophy before its name, a time trial a stopwatch.
  */
 function createActivityPopupHtml(activity, garminConnectUrl) {
     const typeLabel = activityTypeLabel(activity.activity_type);
@@ -647,7 +653,7 @@ function createActivityPopupHtml(activity, garminConnectUrl) {
 
     return `
     <div class="ap">
-        <div class="ap-title">${raceIcon(activity)}${activity.name}</div>
+        <div class="ap-title">${eventIcon(activity)}${activity.name}</div>
         <div class="ap-meta">${typeIcon}<span>${formatActivityStart(activity.date, activity.time)}</span>${link}</div>
         <div class="ap-metrics">
             ${metric('route', 'Distance', formatUnit(Number(activity.distance) || 0, 'kilometer', 1))}
@@ -2611,7 +2617,7 @@ function showSelectionDialog() {
             <div class="area-sel-row" data-idx="${idx}" style="display:flex;gap:6px;padding:5px 8px;border-top:1px solid rgba(0,0,0,0.07);cursor:pointer;align-items:baseline;">
                 <span style="width:8px;height:8px;border-radius:2px;background:${a.color};display:inline-block;flex:0 0 auto;align-self:center;"></span>
                 <span style="flex:0 0 auto;color:#666;">${a.date}</span>
-                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${a.name}">${raceIcon(a)}${a.name}</span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${a.name}">${eventIcon(a)}${a.name}</span>
                 <span style="flex:0 0 auto;">${(Number(a.distance) || 0).toFixed(1)}km</span>
                 <span style="flex:0 0 auto;color:#666;">${formatDuration(a.duration)}</span>
                 <span style="flex:0 0 auto;">${garminActivityLink(a.activity_id)}</span>

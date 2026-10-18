@@ -48,6 +48,20 @@ ACTIVITY_TYPES = {'running': [1, "running", 17],
                   'hiking': [3, "hiking", 17],
                   'cycling': [2, "cycling", 17]}
 
+# GARMIN EVENT TYPES
+#
+# Mapping an event type key to its Garmin type_id. The map shows a trophy for a race and a stopwatch for
+# a special event, which marks a time trial (a hard solo effort over a set distance, e.g. a measured 5k).
+EVENT_TYPES = {'race': 1,
+               'recreation': 2,
+               'specialEvent': 3,
+               'training': 4,
+               'transportation': 5,
+               'touring': 6,
+               'geocaching': 7,
+               'fitness': 8,
+               'uncategorized': 9}
+
 
 # ###################
 # HELPER FUNCTIONS
@@ -206,6 +220,19 @@ def update_activity_type(api):
     return None
 
 
+def set_event_type(api, activity_ids, event_type):
+    """
+    Set the event type (a key of EVENT_TYPES) of the given activities in GarminConnect
+
+    Re-download them afterwards (utility mode REDOWNLOAD with --activity-id) so the local data gets the change.
+    """
+    type_id = EVENT_TYPES[event_type]
+    for activity_id in activity_ids:
+        logger.info(f"Setting event type of {activity_id} to {event_type}")
+        api.client.put("connectapi", f"{api.garmin_connect_activity}/{activity_id}", api=True,
+                       json={"activityId": activity_id, "eventTypeDTO": {"typeId": type_id, "typeKey": event_type}})
+
+
 def upload_manual_activities(api):
     """
     Upload a list of manually created activities to GarminConnect
@@ -361,6 +388,7 @@ def main():
     # split_and_upload(api)
     # upload_manual_activities(api)
     # update_activity_type(api)
+    # set_event_type(api, [0000000000, 0000000001], 'specialEvent')
     # categorize_activities(api)
     get_activity_by_id(api, 15611628640)
 

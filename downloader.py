@@ -86,16 +86,28 @@ def map_to_object(api_activity):
                             name=api_activity.get('activityName'),
                             elevation_gain=get_summary_field(api_activity, 'elevationGain'),
                             elevation_loss=get_summary_field(api_activity, 'elevationLoss'),
-                            is_race=is_race(api_activity))
+                            is_race=is_race(api_activity),
+                            is_trial=is_trial(api_activity))
 
 
-def is_race(api_activity):
-    """Whether Garmin has the activity's event type set to race.
+def event_type_key(api_activity):
+    """The typeKey of the activity's Garmin event type, None if it has none.
 
     The activity list response carries it as eventType, the single-activity one as eventTypeDTO.
     """
     event_type = api_activity.get('eventType') or api_activity.get('eventTypeDTO') or {}
-    return event_type.get('typeKey') == 'race'
+    return event_type.get('typeKey')
+
+
+def is_race(api_activity):
+    """Whether Garmin has the activity's event type set to race."""
+    return event_type_key(api_activity) == 'race'
+
+
+def is_trial(api_activity):
+    """Whether Garmin has the activity's event type set to special event, used to mark a time trial
+    (a hard solo effort over a set distance, e.g. a measured 5k), which Garmin has no event type for."""
+    return event_type_key(api_activity) == 'specialEvent'
 
 
 def get_summary_field(api_activity, key):
@@ -203,6 +215,7 @@ def regenerate_csv():
         activity.elevation_gain = storage.optional_metres(get_summary_field(activity_json, 'elevationGain'))
         activity.elevation_loss = storage.optional_metres(get_summary_field(activity_json, 'elevationLoss'))
         activity.is_race = is_race(activity_json)
+        activity.is_trial = is_trial(activity_json)
 
     storage.write_database(existing_activities)
 

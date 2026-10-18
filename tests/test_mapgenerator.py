@@ -163,6 +163,15 @@ class TestCreateActivityDataFiles:
         assert payloads[0]["race"] is True
         assert "race" not in payloads[1]
 
+    def test_only_a_trial_carries_the_trial_flag(self, storage_env, mapping_config):
+        trial = make_activity(storage, activity_id=7, filename="a", is_trial=True)
+        other = make_activity(storage, activity_id=8, filename="b")
+        out_dir = storage_env.tmp_path / "output"
+        mapgenerator.create_activity_data_files([trial, other], str(out_dir))
+        payloads = json.loads((out_dir / "data" / "running_activities.json").read_text())
+        assert payloads[0]["trial"] is True and "race" not in payloads[0]
+        assert "trial" not in payloads[1]
+
     def test_empty_activities_uses_epoch_date_range(self, storage_env, mapping_config):
         out_dir = storage_env.tmp_path / "output"
         manifest = mapgenerator.create_activity_data_files([], str(out_dir))
@@ -396,6 +405,15 @@ class TestCreateMapSmoke:
         html = m.get_root().render()
         assert "SECRETKEY123" in html
         assert "dark_all" in html
+
+    def test_create_map_has_inline_favicons(self, config):
+        config["map-tiles"]["tiles"] = [{"tiles": "OpenStreetMap", "name": "OSM"}]
+        html = mapgenerator.create_map([0.0, 0.0]).get_root().render()
+        head = html.split("</head>")[0]
+        assert '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,' in head
+        # Safari ignores SVG favicons, so PNG copies are embedded as well
+        assert '<link rel="icon" type="image/png" sizes="64x64" href="data:image/png;base64,' in head
+        assert '<link rel="apple-touch-icon" href="data:image/png;base64,' in head
 
 
 class TestCreateMapWithActivitiesEndToEnd:

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 from typing import List
+import base64
 import re
 import json
 import math
 import os
+import urllib.parse
 import folium
 import folium.plugins
 
@@ -111,7 +113,30 @@ def create_map(center):
         layer.add_to(activities_map)
         logger.debug(f"Added tile layer: {tile['name']} (show={layer.show})")
 
+    add_favicon(activities_map)
     return activities_map
+
+
+def add_favicon(activities_map):
+    """Put the templates/favicon.* icons into the page head as inline data URIs.
+
+    Inline, so there are no extra files to upload, and the browser stops falling back
+    to the host's /favicon.ico. Safari ignores SVG favicons, so the PNG copies
+    (rendered from favicon.svg) come first; browsers that take SVG prefer the later link.
+    """
+    templates_dir = os.path.join(os.path.dirname(__file__), 'templates')
+
+    def png_href(name):
+        with open(os.path.join(templates_dir, name), 'rb') as f:
+            return 'data:image/png;base64,' + base64.b64encode(f.read()).decode('ascii')
+
+    with open(os.path.join(templates_dir, 'favicon.svg'), 'r', encoding='utf-8') as f:
+        svg_href = 'data:image/svg+xml,' + urllib.parse.quote(' '.join(f.read().split()))
+
+    header = activities_map.get_root().header
+    header.add_child(folium.Element(f'<link rel="icon" type="image/png" sizes="64x64" href="{png_href("favicon.png")}">'))
+    header.add_child(folium.Element(f'<link rel="apple-touch-icon" href="{png_href("apple-touch-icon.png")}">'))
+    header.add_child(folium.Element(f'<link rel="icon" type="image/svg+xml" href="{svg_href}">'))
 
 
 def build_tile_layer(tile_key, display_name):
@@ -376,6 +401,9 @@ def create_activity_data_files(activities, output_dir):
         # left out for the many activities that are not races; the page then shows no race icon
         if activity.is_race:
             activity_data['race'] = True
+        # likewise for a time trial, marked in Garmin as a special event; the page shows a stopwatch
+        if activity.is_trial:
+            activity_data['trial'] = True
 
         categories[mapping.name]['activities'].append(activity_data)
 

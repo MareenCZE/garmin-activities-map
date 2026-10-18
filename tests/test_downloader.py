@@ -65,6 +65,15 @@ class TestMapToObject:
         assert downloader.map_to_object(dict(TOP_LEVEL, eventType=other)).is_race is False
         assert downloader.map_to_object(TOP_LEVEL).is_race is False  # no event type at all
 
+    def test_trial_from_special_event(self, storage_env):
+        special = {"typeId": 3, "typeKey": "specialEvent", "sortOrder": 6}
+        a = downloader.map_to_object(dict(TOP_LEVEL, eventType=special))
+        assert (a.is_race, a.is_trial) == (False, True)
+        assert downloader.map_to_object(dict(SUMMARY_DTO, eventTypeDTO=special)).is_trial is True
+        race = {"typeId": 1, "typeKey": "race", "sortOrder": 5}
+        assert downloader.map_to_object(dict(TOP_LEVEL, eventType=race)).is_trial is False
+        assert downloader.map_to_object(TOP_LEVEL).is_trial is False
+
     def test_no_elevation_recorded(self, storage_env):
         activity = {k: v for k, v in TOP_LEVEL.items() if not k.startswith("elevation")}
         a = downloader.map_to_object(activity)
@@ -218,21 +227,24 @@ class TestDownloadActivities:
 
 
 class TestRegenerateCsv:
-    def test_fills_time_elevation_and_race_from_stored_json(self, storage_env):
+    def test_fills_time_elevation_race_and_trial_from_stored_json(self, storage_env):
         import json
         storage.write_database([
             make_activity(storage, activity_id=1, time="", filename="a"),
             make_activity(storage, activity_id=2, time="", filename="b"),
+            make_activity(storage, activity_id=3, time="", filename="c"),
         ], storage_env.db_path)
         (storage_env.json_dir / "a.json").write_text(json.dumps(dict(TOP_LEVEL, eventType={"typeKey": "race"})))
         (storage_env.json_dir / "b.json").write_text(json.dumps(
             {"summaryDTO": {"startTimeLocal": "2024-05-01T18:05:00.0"}}))  # nothing recorded
+        (storage_env.json_dir / "c.json").write_text(json.dumps(
+            dict(TOP_LEVEL, eventType={"typeKey": "specialEvent"})))
 
         downloader.regenerate_csv()
 
         loaded = storage.load_activities_from_csv(load_coordinates=False)
-        assert [(a.time, a.elevation_gain, a.elevation_loss, a.is_race) for a in loaded] == [
-            ("07:30", 313, 298, True), ("18:05", None, None, False)]
+        assert [(a.time, a.elevation_gain, a.elevation_loss, a.is_race, a.is_trial) for a in loaded] == [
+            ("07:30", 313, 298, True, False), ("18:05", None, None, False, False), ("07:30", 313, 298, False, True)]
 
 
 class TestLoginGuard:

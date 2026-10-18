@@ -19,7 +19,7 @@ def init_directories():
 
 
 FIELDNAMES = ['date', 'time', 'type', 'duration', 'distance', 'activity_id', 'name', 'filename', 'has_gps_data',
-              'elevation_gain', 'elevation_loss', 'is_race']
+              'elevation_gain', 'elevation_loss', 'is_race', 'is_trial']
 
 
 def optional_metres(value):
@@ -31,7 +31,7 @@ def optional_metres(value):
 
 class Activity:
     def __init__(self, activity_id, distance, duration, date, time, filename, has_gps_data, activity_type, name,
-                 elevation_gain=None, elevation_loss=None, is_race=False):
+                 elevation_gain=None, elevation_loss=None, is_race=False, is_trial=False):
         self.activity_id = activity_id
         self.distance = float(distance)
         self.duration = float(duration)
@@ -48,6 +48,7 @@ class Activity:
         self.elevation_gain = optional_metres(elevation_gain)
         self.elevation_loss = optional_metres(elevation_loss)
         self.is_race = is_race
+        self.is_trial = is_trial
         self.coordinates = []
 
     def load_coordinates(self):
@@ -79,7 +80,9 @@ def load_activities_from_csv(load_coordinates=True):
                 elevation_gain=row.get('elevation_gain'),
                 elevation_loss=row.get('elevation_loss'),
                 # absent or empty in a database written before the race column was added
-                is_race=row.get('is_race') == 'True'
+                is_race=row.get('is_race') == 'True',
+                # absent or empty in a database written before the trial column was added
+                is_trial=row.get('is_trial') == 'True'
             )
             if load_coordinates:
                 activity.load_coordinates()
@@ -122,7 +125,8 @@ def write_activity(writer, activity: Activity):
          'has_gps_data': str(activity.has_gps_data),
          'elevation_gain': '' if activity.elevation_gain is None else activity.elevation_gain,
          'elevation_loss': '' if activity.elevation_loss is None else activity.elevation_loss,
-         'is_race': str(activity.is_race)})
+         'is_race': str(activity.is_race),
+         'is_trial': str(activity.is_trial)})
 
 
 def create_appender(filename=None):

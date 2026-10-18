@@ -112,6 +112,7 @@ class TestDatabaseRoundTrip:
         assert loaded[0].activity_id == 1
         assert loaded[0].elevation_gain is None
         assert loaded[0].is_race is False
+        assert loaded[0].is_trial is False
 
     def test_race_flag_round_trips(self, storage_env):
         storage.write_database([
@@ -122,6 +123,16 @@ class TestDatabaseRoundTrip:
             assert [row["is_race"] for row in csv.DictReader(f)] == ["True", "False"]
         loaded = storage.load_activities_from_csv(load_coordinates=False)
         assert [a.is_race for a in loaded] == [True, False]
+
+    def test_trial_flag_round_trips(self, storage_env):
+        storage.write_database([
+            make_activity(storage, activity_id=1),
+            make_activity(storage, activity_id=2, is_trial=True),
+        ], storage_env.db_path)
+        with open(storage_env.db_path, newline="") as f:
+            assert [row["is_trial"] for row in csv.DictReader(f)] == ["False", "True"]
+        loaded = storage.load_activities_from_csv(load_coordinates=False)
+        assert [a.is_trial for a in loaded] == [False, True]
 
     def test_loaded_ids_are_ints(self, storage_env):
         storage.write_database([make_activity(storage, activity_id=15685583510)],
@@ -160,6 +171,7 @@ class TestUpgradeDatabaseHeader:
         assert list(rows[0].keys()) == storage.FIELDNAMES
         assert rows[0]["name"] == "Old" and rows[0]["elevation_gain"] == ""
         assert rows[0]["is_race"] == "False"
+        assert rows[0]["is_trial"] == "False"
         assert len(list(storage_env.tmp_path.glob("activities_list.csv.*"))) == 1
 
     def test_current_header_is_left_alone(self, storage_env):

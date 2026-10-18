@@ -483,6 +483,17 @@ def test_activity_popup_formats_time_and_elevation(served_map):
             assert page.locator(".ap-title > svg:first-child[aria-label='Race']").count() == 1
             assert page.locator(".ap-title").inner_text().endswith("Test Race")
 
+            # A time trial has a stopwatch instead.
+            html = page.evaluate(
+                """() => createActivityPopupHtml({
+                    name: 'Test Trial', activity_type: 'running', date: '2024-05-01',
+                    distance: 5, duration: 20, activity_id: 6, trial: true,
+                }, null)"""
+            )
+            page.set_content(html)
+            assert page.locator(".ap-title > svg:first-child[aria-label='Time trial']").count() == 1
+            assert page.locator("svg[aria-label='Race']").count() == 0
+
             # A type without its own icon still gets one, labelled with the type.
             html = page.evaluate(
                 """() => createActivityPopupHtml({
