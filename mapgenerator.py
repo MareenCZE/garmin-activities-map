@@ -495,6 +495,55 @@ def load_activity_loader_template():
         return ""
 
 
+# Phone browsers draw their toolbars over the page (iOS Safari's bottom bar is
+# see-through), so the map runs to the "large viewport" height underneath them
+# instead of stopping short and leaving the bare page background showing.
+# The bottom controls (attribution, Mapy.com logo - required by the tile terms) are
+# lifted by the covered height, so they stay above the toolbar. On desktop
+# 100lvh == 100svh and nothing moves. Comes after Folium's own `height: 100%`
+# rules, so it wins on order; browsers without lvh keep those.
+PAGE_LAYOUT_STYLE = """<style>
+    html, body { height: 100lvh; overflow: hidden; background: #ddd; }
+    @media (prefers-color-scheme: dark) { html, body { background: #262626; } }
+    .leaflet-top { top: env(safe-area-inset-top, 0px); }
+    .leaflet-left { left: env(safe-area-inset-left, 0px); }
+    .leaflet-right { right: env(safe-area-inset-right, 0px); }
+    .leaflet-bottom { bottom: calc(100lvh - 100svh + env(safe-area-inset-bottom, 0px)); }
+</style>"""
+
+
+# Opened from the iPhone home screen, iOS 27 lays a blur/gradient over the top of
+# the page, well below the status bar and across the top controls. No meta tag turns
+# it off (apple-mobile-web-app-status-bar-style no longer does), but WebKit leaves it
+# out when an opaque fixed strip runs along the top edge (>= 6px high, >= 80% wide,
+# within 4px of the top) and colours the status bar like the strip. So the home-screen
+# app gets one behind the status bar; Safari tabs only blur the status bar itself.
+STATUS_BAR_STRIP_STYLE = """<style>
+    .status-bar-strip { display: none; }
+    @media (display-mode: standalone), (display-mode: fullscreen) {
+        .status-bar-strip {
+            display: block; position: fixed; top: 0; left: 0; right: 0; z-index: 2000;
+            height: max(6px, env(safe-area-inset-top, 0px));
+            background: #ddd; pointer-events: none;
+        }
+        .leaflet-top { top: max(6px, env(safe-area-inset-top, 0px)); }
+    }
+    @media (prefers-color-scheme: dark) { .status-bar-strip { background: #262626; } }
+</style>"""
+STATUS_BAR_STRIP = '<div class="status-bar-strip"></div>'
+
+
+def apply_page_layout(html_content):
+    """Let the map fill the whole screen on phones, under the browser's toolbars."""
+    # viewport-fit=cover: no blank bands beside the notch in landscape; the
+    # safe-area insets above keep the controls clear of it.
+    html_content = re.sub(r'(<meta name="viewport" content="[^"]*?)\s*"',
+                          r'\1, viewport-fit=cover"', html_content, count=1)
+    html_content = html_content.replace(
+        '</head>', PAGE_LAYOUT_STYLE + '\n' + STATUS_BAR_STRIP_STYLE + '\n</head>', 1)
+    return html_content.replace('<body>', '<body>\n' + STATUS_BAR_STRIP, 1)
+
+
 def inject_activity_loader_script(html_content, map_var_name):
     """Inject JavaScript to load activities dynamically with date filtering"""
 
@@ -570,6 +619,7 @@ def create_map_with_activities(activities, filename):
 
     # Inject CSS in head
     html_content = html_content.replace('</head>', nouislider_css + '\n</head>')
+    html_content = apply_page_layout(html_content)
 
     # Inject JS before our script
     html_content = html_content.replace('</body>', nouislider_js + '\n</body>')

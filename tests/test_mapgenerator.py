@@ -1,5 +1,6 @@
 """Tests for mapgenerator.py: category mapping, popups, data files, map build."""
 import json
+import re
 
 import pytest
 
@@ -440,3 +441,9 @@ class TestCreateMapWithActivitiesEndToEnd:
         # Mapy.com attribution logo control is wired in (required by their terms)
         assert "initializeMapyAttribution" in html
         assert "api.mapy.com/img/api/logo.svg" in html
+        # The map runs under phone toolbars; its layout style comes after Folium's
+        head = html.split("</head>")[0]
+        assert re.search(r'<meta name="viewport" content="[^"]*user-scalable=no, viewport-fit=cover"', head)
+        assert head.index("100lvh") > head.index("html, body {width: 100%;height: 100%;")
+        # The opaque strip that keeps iOS 27's top blur off the home-screen app
+        assert re.search(r'<body>\s*<div class="status-bar-strip"></div>', html)

@@ -2282,6 +2282,15 @@ const ZOOM_TO_SELECTION_ICON =
     '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" ' +
     'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+/**
+ * Height of the map's bottom strip that a phone browser's toolbar covers (the page
+ * runs under it): the offset the page's layout style gives the bottom controls.
+ */
+function coveredMapBottom() {
+    const corner = mapInstance.getContainer().querySelector('.leaflet-bottom');
+    return corner ? parseFloat(getComputedStyle(corner).bottom) || 0 : 0;
+}
+
 /** Fit the selection to the map, with a little room around it. */
 function zoomToSelection() {
     if (!areaSelectBounds) return;
@@ -2290,7 +2299,10 @@ function zoomToSelection() {
     const zoomSnap = mapInstance.options.zoomSnap;
     mapInstance.options.zoomSnap = 0;
     try {
-        mapInstance.fitBounds(areaSelectBounds, { padding: [SELECTION_ZOOM_PADDING_PX, SELECTION_ZOOM_PADDING_PX] });
+        const pad = SELECTION_ZOOM_PADDING_PX;
+        mapInstance.fitBounds(areaSelectBounds, {
+            paddingTopLeft: [pad, pad], paddingBottomRight: [pad, pad + coveredMapBottom()],
+        });
     } finally {
         mapInstance.options.zoomSnap = zoomSnap;
     }
@@ -2568,6 +2580,7 @@ function showSelectionDialog() {
         width: 340px;
         max-width: calc(100vw - 70px);
         max-height: calc(100vh - ${top + 20}px);
+        max-height: calc(100svh - ${top + 20}px);
         z-index: 1001;
         display: flex;
         flex-direction: column;
@@ -3412,7 +3425,7 @@ function applyMapPreset(preset) {
     if (preset.selection && selectionEnabled) {
         const bounds = L.latLngBounds(preset.selection);
         // A selection out of sight is brought into view, unless the preset sets the view.
-        if (!setsView && !mapInstance.getBounds().contains(bounds)) mapInstance.fitBounds(bounds, { animate: false });
+        if (!setsView && !mapInstance.getBounds().contains(bounds)) mapInstance.fitBounds(bounds, { animate: false, paddingBottomRight: [0, coveredMapBottom()] });
         setAreaSelection(bounds);
         presetSelectionName = preset.name;
     }
